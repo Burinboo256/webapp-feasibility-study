@@ -81,12 +81,25 @@ const els = {};
 
 document.addEventListener('DOMContentLoaded', async () => {
   bindElements();
-  state.data = await fetch('/data/synthetic-clinical-data.json').then((response) => response.json());
+  state.data = await loadSyntheticData();
   state.conceptCatalog = buildConceptCatalog(state.data);
   writeConfigToForm(state.config);
   bindEvents();
   run();
 });
+
+async function loadSyntheticData() {
+  const localResponse = await fetch('/data/synthetic-clinical-data.json');
+  if (localResponse.ok) {
+    return localResponse.json();
+  }
+
+  const exampleResponse = await fetch('/data/synthetic-clinical-data_example.json');
+  if (!exampleResponse.ok) {
+    throw new Error('Unable to load synthetic data.');
+  }
+  return exampleResponse.json();
+}
 
 function bindElements() {
   for (const id of [
