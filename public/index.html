@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Diagnosis Feasibility Study</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <header class="hero">
+      <nav class="topbar" aria-label="Application">
+        <a class="brand" href="/">Cohort Lens</a>
+        <span class="pill">Synthetic data only</span>
+      </nav>
+      <section class="hero-grid">
+        <div>
+          <p class="eyebrow">Research feasibility workbench</p>
+          <h1>Estimate patient counts before committing to a study protocol.</h1>
+          <p class="hero-copy">
+            Inspired by ATLAS/OHDSI cohort definitions and i2b2 query panels, but built on the local
+            Siriraj-style schema from <code>data_dictionary.md</code>.
+          </p>
+        </div>
+        <aside class="hero-card">
+          <span class="metric-label">Final cohort</span>
+          <strong id="heroCount">0</strong>
+          <span id="heroContext">Waiting for synthetic data</span>
+        </aside>
+      </section>
+    </header>
+
+    <main class="layout">
+      <section class="panel builder" aria-labelledby="builderTitle">
+        <div class="section-heading">
+          <p class="eyebrow">Define cohort</p>
+          <h2 id="builderTitle">Feasibility question</h2>
+        </div>
+
+        <label class="field wide">
+          <span>Research question</span>
+          <textarea id="question" rows="3"></textarea>
+        </label>
+
+        <div class="quick-actions" aria-label="Preset cohort examples">
+          <button class="ghost" type="button" data-preset="diabetes">Diabetes + HbA1c + metformin</button>
+          <button class="ghost" type="button" data-preset="lab">High HbA1c lab-first cohort</button>
+          <button class="ghost" type="button" data-preset="stroke">Stroke + antiplatelet</button>
+        </div>
+
+        <form id="cohortForm">
+          <fieldset class="card">
+            <div class="card-title">
+              <legend>T0 index event conditions</legend>
+              <button id="addIndexCondition" type="button" class="small">Add T0 condition</button>
+            </div>
+            <p class="helper-text">All T0 conditions are required. The first condition sets the cohort entry date used for before/after timing.</p>
+            <div id="indexConditionList" class="criteria-list"></div>
+            <div class="form-grid">
+              <label class="field">
+                <span>From</span>
+                <input id="indexFrom" type="date">
+              </label>
+              <label class="field">
+                <span>To</span>
+                <input id="indexTo" type="date">
+              </label>
+            </div>
+          </fieldset>
+
+          <fieldset class="card">
+            <legend>Demographics</legend>
+            <div class="form-grid">
+              <label class="field">
+                <span>Min age at T0</span>
+                <input id="minAge" type="number" min="0" placeholder="18">
+              </label>
+              <label class="field">
+                <span>Max age at T0</span>
+                <input id="maxAge" type="number" min="0" placeholder="No limit">
+              </label>
+              <label class="field">
+                <span>Sex</span>
+                <select id="sex">
+                  <option>Any</option>
+                  <option>Female</option>
+                  <option>Male</option>
+                </select>
+              </label>
+            </div>
+          </fieldset>
+
+          <section class="criteria-grid">
+            <div class="card">
+              <div class="card-title">
+                <legend>Inclusion criteria</legend>
+                <button id="addInclusion" type="button" class="small">Add</button>
+              </div>
+              <div id="inclusionList" class="criteria-list"></div>
+            </div>
+            <div class="card">
+              <div class="card-title">
+                <legend>Exclusion criteria</legend>
+                <button id="addExclusion" type="button" class="small">Add</button>
+              </div>
+              <div id="exclusionList" class="criteria-list"></div>
+            </div>
+          </section>
+
+          <button class="primary" type="submit">Run feasibility count</button>
+        </form>
+      </section>
+
+      <section class="results-stack">
+        <section class="panel" aria-labelledby="resultsTitle">
+          <div class="section-heading">
+            <p class="eyebrow">Results</p>
+            <h2 id="resultsTitle">Patient count and attrition</h2>
+          </div>
+          <div class="kpi-grid">
+            <article class="kpi"><span>Has T0 index</span><strong id="indexEligible">0</strong></article>
+            <article class="kpi accent"><span>Final cohort</span><strong id="finalCount">0</strong></article>
+          </div>
+          <div id="attrition" class="attrition"></div>
+          <section class="workflow-section" aria-labelledby="workflowTitle">
+            <div class="workflow-heading">
+              <h3 id="workflowTitle">Cohort attrition workflow</h3>
+            </div>
+            <div id="workflowDiagram" class="workflow-diagram"></div>
+            <div class="workflow-actions">
+              <button id="downloadSvg" class="small" type="button">Download SVG</button>
+              <button id="downloadPng" class="small" type="button">Download PNG</button>
+            </div>
+          </section>
+        </section>
+
+        <section class="panel sql-panel" aria-labelledby="sqlTitle">
+          <div class="section-heading sql-heading">
+            <div>
+              <p class="eyebrow">SQL Builder</p>
+              <h2 id="sqlTitle">Generated SQL</h2>
+            </div>
+            <button id="copySql" class="small" type="button">Copy SQL</button>
+          </div>
+          <pre class="sql-block"><code id="generatedSql"></code></pre>
+          <p id="sqlSummary" class="sql-summary">Criteria: no selected criteria</p>
+        </section>
+      </section>
+    </main>
+
+    <footer class="footer">
+      Development dataset is synthetic and schema-aligned. Use de-identified data and governance review before connecting real clinical sources.
+    </footer>
+
+    <template id="criterionTemplate">
+      <article class="criterion">
+        <div class="criterion-top">
+          <select data-field="domain" aria-label="Criterion domain">
+            <option value="diagnosis">Diagnosis/comorbidity</option>
+            <option value="lab">Lab</option>
+            <option value="drug">Drug release</option>
+          </select>
+          <select data-field="joiner" aria-label="Combine condition with previous">
+            <option value="AND">AND</option>
+            <option value="OR">OR</option>
+          </select>
+          <button type="button" class="remove" aria-label="Remove criterion">Remove</button>
+        </div>
+        <label class="field compact">
+          <span>Label</span>
+          <input data-field="label" type="text" placeholder="Hypertension before T0">
+        </label>
+        <div class="criterion-grid">
+          <label class="field compact">
+            <span>Code/name concepts</span>
+            <select class="concept-select-hidden" data-field="concepts" multiple></select>
+            <div class="concept-picker" data-field="conceptPicker"></div>
+          </label>
+          <div class="concept-preview" data-field="conceptPreview" aria-live="polite"></div>
+          <label class="field compact">
+            <span>Operator</span>
+            <select data-field="operator">
+              <option value="any">Any result</option>
+              <option value=">=">&gt;=</option>
+              <option value=">">&gt;</option>
+              <option value="<=">&lt;=</option>
+              <option value="<">&lt;</option>
+              <option value="=">=</option>
+            </select>
+          </label>
+          <label class="field compact">
+            <span>Value</span>
+            <input data-field="value" type="number" step="0.1" placeholder="Optional">
+          </label>
+          <label class="field compact">
+            <span>Timing vs T0</span>
+            <select data-field="timing">
+              <option value="within">Within window</option>
+              <option value="before">Before T0</option>
+              <option value="after">After T0</option>
+              <option value="any">Any time</option>
+            </select>
+          </label>
+          <label class="field compact">
+            <span>Days before</span>
+            <input data-field="daysBefore" type="number" min="0" value="365">
+          </label>
+          <label class="field compact">
+            <span>Days after</span>
+            <input data-field="daysAfter" type="number" min="0" value="365">
+          </label>
+        </div>
+      </article>
+    </template>
+
+    <template id="indexConditionTemplate">
+      <article class="criterion index-condition">
+        <div class="criterion-top">
+          <select data-field="domain" aria-label="T0 condition domain">
+            <option value="diagnosis">Diagnosis</option>
+            <option value="lab">Lab</option>
+            <option value="drug">Drug release</option>
+          </select>
+          <select data-field="joiner" aria-label="Combine T0 condition with previous">
+            <option value="AND">AND</option>
+            <option value="OR">OR</option>
+          </select>
+          <button type="button" class="remove" aria-label="Remove T0 condition">Remove</button>
+        </div>
+        <label class="field compact">
+          <span>Label</span>
+          <input data-field="label" type="text" placeholder="Diabetes diagnosis at T0">
+        </label>
+        <div class="criterion-grid">
+          <label class="field compact">
+            <span>Code/name concepts</span>
+            <select class="concept-select-hidden" data-field="concepts" multiple></select>
+            <div class="concept-picker" data-field="conceptPicker"></div>
+          </label>
+          <label class="field compact lab-only-condition">
+            <span>Lab operator</span>
+            <select data-field="labOperator">
+              <option value=">=">&gt;=</option>
+              <option value=">">&gt;</option>
+              <option value="<=">&lt;=</option>
+              <option value="<">&lt;</option>
+              <option value="=">=</option>
+            </select>
+          </label>
+          <label class="field compact lab-only-condition">
+            <span>Lab value</span>
+            <input data-field="labValue" type="number" step="0.1" placeholder="7.0">
+          </label>
+        </div>
+        <div class="concept-preview" data-field="conceptPreview" aria-live="polite"></div>
+      </article>
+    </template>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

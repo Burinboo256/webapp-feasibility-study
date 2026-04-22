@@ -1,0 +1,10 @@
+{
+  "name": "webapp-feasibility-study",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/dev-server.mjs",
+    "test": "node --test tests/*.test.mjs"
+  }
+}
