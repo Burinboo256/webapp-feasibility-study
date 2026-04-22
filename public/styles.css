@@ -69,6 +69,14 @@ textarea {
   justify-content: space-between;
 }
 
+.nav-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
 .brand {
   color: inherit;
   font-size: 1.1rem;
@@ -76,6 +84,15 @@ textarea {
   letter-spacing: 0.08em;
   text-decoration: none;
   text-transform: uppercase;
+}
+
+.nav-link {
+  border: 1px solid rgba(255, 248, 232, 0.38);
+  border-radius: 999px;
+  color: #ffebbd;
+  font-weight: 800;
+  padding: 8px 14px;
+  text-decoration: none;
 }
 
 .pill {
@@ -136,6 +153,10 @@ h2 {
   padding: 24px;
 }
 
+.compact-hero {
+  padding-bottom: 34px;
+}
+
 .hero-card strong {
   display: block;
   font-size: 4rem;
@@ -151,6 +172,14 @@ h2 {
   display: grid;
   gap: 24px;
   grid-template-columns: minmax(0, 1.05fr) minmax(420px, 0.95fr);
+  padding: 28px clamp(18px, 4vw, 54px) 48px;
+}
+
+.log-layout {
+  display: grid;
+  gap: 24px;
+  margin: 0 auto;
+  max-width: 1240px;
   padding: 28px clamp(18px, 4vw, 54px) 48px;
 }
 
@@ -236,6 +265,39 @@ textarea {
   margin-bottom: 18px;
 }
 
+.saved-cohorts {
+  background: #f7eddb;
+  border: 1px solid #ddceb7;
+  border-radius: 22px;
+  margin-bottom: 18px;
+  padding: 16px;
+}
+
+.saved-cohorts-heading {
+  align-items: flex-start;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.saved-cohorts-heading h3 {
+  font-size: 1.2rem;
+  margin: 0;
+}
+
+.saved-cohort-controls {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.saved-cohort-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+}
+
 button {
   border: 0;
   border-radius: 999px;
@@ -243,11 +305,21 @@ button {
   font-weight: 800;
 }
 
+button:disabled,
+select:disabled {
+  cursor: not-allowed;
+  opacity: 0.56;
+}
+
 .ghost,
 .small {
   background: #efe3cf;
   color: #5c3a25;
   padding: 10px 14px;
+}
+
+.danger {
+  color: #a43d24;
 }
 
 .primary {
@@ -488,6 +560,10 @@ legend,
   grid-template-columns: repeat(2, 1fr);
 }
 
+.log-kpis {
+  grid-template-columns: repeat(3, 1fr);
+}
+
 .kpi {
   background: #f7eddb;
   border-radius: 22px;
@@ -650,6 +726,70 @@ legend,
   overflow-x: auto;
 }
 
+.run-log-list {
+  display: grid;
+  gap: 14px;
+}
+
+.run-log-card {
+  background: #f7eddb;
+  border: 1px solid #ddceb7;
+  border-radius: 20px;
+  padding: 14px;
+}
+
+.run-log-header {
+  align-items: flex-start;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.run-log-header strong {
+  font-size: 1.05rem;
+}
+
+.run-log-header p,
+.run-log-concepts p {
+  color: var(--muted);
+  line-height: 1.45;
+  margin: 6px 0 0;
+}
+
+.run-log-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.run-log-counts span {
+  background: #eadcc6;
+  border-radius: 999px;
+  color: #5c3a25;
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-size: 0.78rem;
+  font-weight: 800;
+  padding: 7px 10px;
+}
+
+.run-log-concepts {
+  border-top: 1px solid #ddceb7;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 14px;
+  padding-top: 14px;
+}
+
+.run-log-concepts h3 {
+  color: var(--ink);
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-size: 0.78rem;
+  margin: 0;
+  text-transform: uppercase;
+}
+
 table {
   border-collapse: collapse;
   min-width: 720px;
@@ -690,6 +830,9 @@ th {
 
   .concept-grid,
   .form-grid,
+  .log-kpis,
+  .run-log-concepts,
+  .saved-cohort-controls,
   .kpi-grid {
     grid-template-columns: 1fr;
   }

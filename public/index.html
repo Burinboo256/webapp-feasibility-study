@@ -10,7 +10,10 @@
     <header class="hero">
       <nav class="topbar" aria-label="Application">
         <a class="brand" href="/">Cohort Lens</a>
-        <span class="pill">Synthetic data only</span>
+        <div class="nav-actions">
+          <a class="nav-link" href="/logs.html">Session logs</a>
+          <span class="pill">Synthetic data only</span>
+        </div>
       </nav>
       <section class="hero-grid">
         <div>
@@ -47,13 +50,42 @@
           <button class="ghost" type="button" data-preset="stroke">Stroke + antiplatelet</button>
         </div>
 
+        <section class="saved-cohorts" aria-labelledby="savedCohortsTitle">
+          <div class="saved-cohorts-heading">
+            <div>
+              <p class="eyebrow">Reusable definitions</p>
+              <h3 id="savedCohortsTitle">Saved cohort selections</h3>
+            </div>
+            <button id="saveCohort" class="small" type="button">Save current</button>
+          </div>
+          <div class="saved-cohort-controls">
+            <label class="field compact">
+              <span>Save name</span>
+              <input id="savedCohortName" type="text" placeholder="e.g. Diabetes HbA1c v1">
+            </label>
+            <label class="field compact">
+              <span>Search saved</span>
+              <input id="savedCohortSearch" type="search" placeholder="Search name, question, code, drug, lab">
+            </label>
+            <label class="field compact">
+              <span>Saved cohorts</span>
+              <select id="savedCohortSelect"></select>
+            </label>
+          </div>
+          <div class="saved-cohort-actions">
+            <button id="loadSavedCohort" class="ghost" type="button">Load selected</button>
+            <button id="deleteSavedCohort" class="ghost danger" type="button">Delete selected</button>
+          </div>
+          <p id="savedCohortStatus" class="helper-text">Saved cohorts stay in this browser.</p>
+        </section>
+
         <form id="cohortForm">
           <fieldset class="card">
             <div class="card-title">
               <legend>T0 index event conditions</legend>
               <button id="addIndexCondition" type="button" class="small">Add T0 condition</button>
             </div>
-            <p class="helper-text">All T0 conditions are required. The first condition sets the cohort entry date used for before/after timing.</p>
+            <p class="helper-text">Use AND/OR to combine T0 conditions. The first matching condition sets the cohort entry date used for before/after timing.</p>
             <div id="indexConditionList" class="criteria-list"></div>
             <div class="form-grid">
               <label class="field">

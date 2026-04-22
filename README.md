@@ -31,10 +31,29 @@ Use `kill -9 <PID>` only if the process does not stop normally.
 - Cohort logic: multiple T0 index event conditions, AND/OR condition logic, demographics, inclusion criteria, exclusion criteria, comorbidity diagnosis filters, lab thresholds, drug timing before/after T0, and multiple code/name concept selection.
 - Concept picker: diagnosis, lab, and drug controls use searchable dropdown lists generated from the synthetic dataset; users can search, select visible matches, clear visible matches, clear all, and confirm with an Apply button.
 - Startup state: the app opens with no selected concepts; use the preset buttons to load example cohort definitions.
+- Saved cohorts: users can save the current cohort selection with a name, search saved definitions by name/question/code/concept, reload them later, and delete old saved definitions. Saved cohorts are stored in the browser with `localStorage`.
 - SQL builder: the right panel generates CTE-based MSSQL from the selected cohort criteria and includes a Copy SQL button.
 - Results panel: shows T0 index and final cohort counts, horizontal attrition bars, and a clickable SVG cohort workflow diagram.
 - Workflow export: the cohort workflow diagram can be downloaded as SVG or 2x PNG.
+- Session logs: `/logs.html` shows browser-local session counts and feasibility run audit records.
 - Data: synthetic only. Local development reads `public/data/synthetic-clinical-data.json` first, but that file is ignored by Git. The committed example dataset is `public/data/synthetic-clinical-data_example.json`.
+
+## Saved Cohort Selections
+
+Use **Save current** to store the current research question, T0 conditions, demographics, inclusion rules, exclusion rules, selected concepts, timing windows, and lab value filters.
+
+Saved definitions are kept in the current browser only. They are not sent to a server and are not shared across devices unless browser storage is copied or exported separately.
+
+## Session And Run Logs
+
+Open `http://localhost:4173/logs.html` to view prototype audit logs.
+
+- Each browser session receives a generated session ID.
+- Each manual **Run feasibility count** action creates a run log.
+- Run logs include the research question, T0 count, final cohort count, attrition, generated SQL, full cohort config, and selected diagnosis/lab/drug concepts.
+- Logs can be searched and exported as JSON.
+
+This is local browser monitoring only. It can show how the current browser uses the app, but it cannot count all users across machines until a shared backend or database audit service is added.
 
 ## Synthetic Data Files
 

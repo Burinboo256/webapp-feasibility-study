@@ -1,5 +1,13 @@
 import { defaultConfig, diabetesPresetConfig, evaluateCohort } from '../src/cohortEngine.js';
 import { buildSql } from '../src/sqlBuilder.js';
+import {
+  SAVED_COHORTS_KEY,
+  collectSelectedConcepts,
+  getCurrentSession,
+  readList,
+  recordFeasibilityRun,
+  writeList
+} from './auditStore.js';
 
 const state = {
   data: null,
@@ -81,6 +89,7 @@ const els = {};
 
 document.addEventListener('DOMContentLoaded', async () => {
   bindElements();
+  getCurrentSession();
   state.data = await loadSyntheticData();
   state.conceptCatalog = buildConceptCatalog(state.data);
   writeConfigToForm(state.config);
@@ -128,7 +137,14 @@ function bindElements() {
     'sqlSummary',
     'copySql',
     'addInclusion',
-    'addExclusion'
+    'addExclusion',
+    'savedCohortName',
+    'savedCohortSearch',
+    'saveCohort',
+    'savedCohortSelect',
+    'loadSavedCohort',
+    'deleteSavedCohort',
+    'savedCohortStatus'
   ]) {
     els[id] = document.getElementById(id);
   }
@@ -138,7 +154,7 @@ function bindEvents() {
   els.cohortForm.addEventListener('submit', (event) => {
     event.preventDefault();
     state.config = readConfigFromForm();
-    run();
+    run({ logRun: true });
   });
   els.cohortForm.addEventListener('input', refreshSqlFromForm);
   els.cohortForm.addEventListener('change', refreshSqlFromForm);
@@ -148,6 +164,10 @@ function bindEvents() {
   els.addExclusion.addEventListener('click', () => addCriterion('exclusionList'));
   els.downloadSvg.addEventListener('click', () => downloadSvg());
   els.downloadPng.addEventListener('click', () => downloadPng());
+  els.saveCohort.addEventListener('click', () => saveCurrentCohort());
+  els.savedCohortSearch.addEventListener('input', () => renderSavedCohorts(els.savedCohortSelect.value));
+  els.loadSavedCohort.addEventListener('click', () => loadSelectedCohort());
+  els.deleteSavedCohort.addEventListener('click', () => deleteSelectedCohort());
   els.copySql.addEventListener('click', async () => {
     await copyText(state.currentSql);
     els.copySql.textContent = 'Copied';
@@ -163,6 +183,136 @@ function bindEvents() {
       run();
     });
   });
+  renderSavedCohorts();
+}
+
+function saveCurrentCohort() {
+  state.config = readConfigFromForm();
+  const savedCohorts = loadSavedCohorts();
+  const name = els.savedCohortName.value.trim() || defaultSavedCohortName(state.config);
+  const saved = {
+    id: crypto.randomUUID(),
+    name,
+    savedAt: new Date().toISOString(),
+    config: structuredClone(state.config)
+  };
+
+  if (!saveCohorts([saved, ...savedCohorts])) {
+    setSavedCohortStatus('Unable to save. Browser storage may be unavailable or full.');
+    return;
+  }
+
+  els.savedCohortName.value = '';
+  renderSavedCohorts(saved.id);
+  run();
+  setSavedCohortStatus(`Saved "${name}".`);
+}
+
+function loadSelectedCohort() {
+  const saved = findSelectedSavedCohort();
+  if (!saved) {
+    setSavedCohortStatus('Select a saved cohort to load.');
+    return;
+  }
+
+  state.config = structuredClone(saved.config);
+  writeConfigToForm(state.config);
+  renderSavedCohorts(saved.id);
+  run();
+  setSavedCohortStatus(`Loaded "${saved.name}".`);
+}
+
+function deleteSelectedCohort() {
+  const saved = findSelectedSavedCohort();
+  if (!saved) {
+    setSavedCohortStatus('Select a saved cohort to delete.');
+    return;
+  }
+
+  if (!window.confirm(`Delete saved cohort "${saved.name}"?`)) return;
+
+  if (!saveCohorts(loadSavedCohorts().filter((item) => item.id !== saved.id))) {
+    setSavedCohortStatus('Unable to delete. Browser storage may be unavailable.');
+    return;
+  }
+
+  renderSavedCohorts();
+  setSavedCohortStatus(`Deleted "${saved.name}".`);
+}
+
+function renderSavedCohorts(selectedId = '') {
+  const savedCohorts = loadSavedCohorts();
+  const searchTerm = els.savedCohortSearch.value.trim().toLowerCase();
+  const filteredCohorts = searchTerm
+    ? savedCohorts.filter((saved) => savedCohortSearchText(saved).includes(searchTerm))
+    : savedCohorts;
+  const options = filteredCohorts.length > 0
+    ? filteredCohorts.map((saved) => {
+      const option = document.createElement('option');
+      option.value = saved.id;
+      option.textContent = `${saved.name} · ${formatSavedAt(saved.savedAt)}`;
+      option.selected = saved.id === selectedId;
+      return option;
+    })
+    : [new Option(savedCohorts.length > 0 ? 'No saved cohorts match search' : 'No saved cohorts yet', '')];
+
+  els.savedCohortSelect.replaceChildren(...options);
+  const hasFilteredCohorts = filteredCohorts.length > 0;
+  els.savedCohortSelect.disabled = !hasFilteredCohorts;
+  els.loadSavedCohort.disabled = !hasFilteredCohorts;
+  els.deleteSavedCohort.disabled = !hasFilteredCohorts;
+
+  if (savedCohorts.length === 0) {
+    setSavedCohortStatus('Saved cohorts stay in this browser.');
+  } else if (!hasFilteredCohorts) {
+    setSavedCohortStatus(`No saved cohorts match "${els.savedCohortSearch.value}".`);
+  } else {
+    setSavedCohortStatus(`${filteredCohorts.length} of ${savedCohorts.length} saved cohorts shown.`);
+  }
+}
+
+function findSelectedSavedCohort() {
+  const selectedId = els.savedCohortSelect.value;
+  return loadSavedCohorts().find((saved) => saved.id === selectedId);
+}
+
+function loadSavedCohorts() {
+  return readList(SAVED_COHORTS_KEY).filter((item) => item?.id && item?.config);
+}
+
+function saveCohorts(savedCohorts) {
+  return writeList(SAVED_COHORTS_KEY, savedCohorts, 50);
+}
+
+function defaultSavedCohortName(config) {
+  const question = (config.question || '').trim();
+  if (question) return question.slice(0, 72);
+  return `Cohort ${formatSavedAt(new Date().toISOString())}`;
+}
+
+function formatSavedAt(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'unknown date';
+  return date.toLocaleString([], {
+    year: 'numeric',
+    month: 'short',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+}
+
+function setSavedCohortStatus(message) {
+  els.savedCohortStatus.textContent = message;
+}
+
+function savedCohortSearchText(saved) {
+  const selectedConcepts = collectSelectedConcepts(saved.config);
+  const concepts = Object.values(selectedConcepts)
+    .flat()
+    .map((concept) => `${concept.section} ${concept.code} ${concept.name}`)
+    .join(' ');
+  return `${saved.name} ${saved.config.question || ''} ${concepts}`.toLowerCase();
 }
 
 function writeConfigToForm(config) {
@@ -286,10 +436,13 @@ function setCriterionField(node, field, value) {
   node.querySelector(`[data-field="${field}"]`).value = value;
 }
 
-function run() {
+function run(options = {}) {
   if (!state.data) return;
   const result = evaluateCohort(state.config, state.data);
   renderResult(result);
+  if (options.logRun) {
+    recordFeasibilityRun(state.config, result, state.currentSql);
+  }
 }
 
 function buildConceptCatalog(data) {
