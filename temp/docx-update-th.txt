@@ -1,0 +1,181 @@
+เว็บแอป Diagnosis Feasibility Study
+
+ภาพรวมโครงการ
+
+โครงการนี้เป็นเว็บแอปแบบ Node.js สำหรับงาน cohort feasibility research รองรับเกณฑ์จาก diagnosis, laboratory และ medication สามารถสร้าง SQL รูปแบบ SQL Server และทำงานได้ทั้งโหมดสาธิตในเครื่องและโหมดที่เชื่อมต่อ SQL Server จริง
+
+Repository
+
+https://github.com/Burinboo256/webapp-feasibility-study
+
+คำสั่งหลัก
+
+- pnpm install
+- pnpm dev
+- pnpm test
+- node scripts/hash-password.mjs "new-password"
+
+ระบบนี้ทำอะไรได้บ้าง
+
+- สร้าง cohort definition โดยมี T0 index events, demographics, inclusion rules, exclusion rules, timing windows และ selected diagnosis, lab, drug concepts
+- รัน feasibility count ผ่าน Node backend แทนการประมวลผลใน browser โดยตรง
+- สร้าง SQL แบบ CTE-based สำหรับ SQL Server เพื่อใช้ตรวจสอบ logic และ debug
+- รองรับ login, OTP flows, saved cohorts และ audit logging
+
+ไฟล์ config หลัก
+
+ไฟล์ config หลักของระบบคือ:
+
+config/app.config.json
+
+ไฟล์เดียวนี้ใช้ควบคุม:
+
+- host, port และ cookie security ของ server
+- การตั้งค่า OTP และ session
+- การตั้งค่า Google OAuth
+- การตั้งค่า SMTP
+- แหล่งข้อมูล clinical data
+- รูปแบบการเก็บ app storage
+- การเชื่อมต่อ SQL Server
+
+สวิตช์สำคัญของระบบ
+
+ระบบปัจจุบันใช้สวิตช์ 2 ตัวที่แยกหน้าที่กัน:
+
+- clinicalDataSource: "json" หรือ "sqlserver"
+- appStorage: "local" หรือ "sqlserver"
+
+ค่าที่แนะนำ:
+
+- สำหรับ demo หรือ local development:
+  clinicalDataSource = "json"
+  appStorage = "local"
+
+- สำหรับ production-like deployment:
+  clinicalDataSource = "sqlserver"
+  appStorage = "sqlserver"
+
+ความหมายของแต่ละสวิตช์
+
+- clinicalDataSource ใช้กำหนดว่า feasibility counts และ concept lookup จะอ่านจากที่ใด
+- appStorage ใช้กำหนดว่า users, sessions, pending OTPs, saved cohorts, feasibility run logs และ audit session logs จะเก็บไว้ที่ใด
+
+Environment Variable Overrides
+
+แม้ไฟล์ config จะเป็น source of truth แต่ยังสามารถ override ด้วย environment variables ต่อไปนี้ได้:
+
+- HOST
+- PORT
+- COOKIE_SECURE
+- CLINICAL_DATA_SOURCE
+- APP_STORAGE
+- DATA_SOURCE
+- GOOGLE_CLIENT_ID
+- GOOGLE_CLIENT_SECRET
+- GOOGLE_REDIRECT_URI
+- GOOGLE_ALLOWED_EMAILS
+- SMTP_HOST
+- SMTP_PORT
+- SMTP_SECURE
+- SMTP_USER
+- SMTP_PASS
+- SMTP_FROM
+- SQLSERVER_HOST
+- SQLSERVER_PORT
+- SQLSERVER_DATABASE
+- SQLSERVER_USER
+- SQLSERVER_PASSWORD
+- SQLSERVER_ENCRYPT
+- SQLSERVER_TRUST_SERVER_CERTIFICATE
+
+Local Storage Mode
+
+เมื่อ appStorage ตั้งเป็น "local" backend จะเก็บข้อมูลในไฟล์ JSON ภายใต้ data directory:
+
+- data/users.json
+- data/user-sessions.json
+- data/pending-otps.json
+- data/saved-cohorts.json
+- data/feasibility-run-logs.json
+- data/audit-session-logs.json
+
+โหมดนี้เหมาะกับ local demo และการทดสอบบนเครื่องเดียว ยังไม่เหมาะกับการใช้งาน production แบบหลาย instance
+
+SQL Server Storage Mode
+
+เมื่อ appStorage ตั้งเป็น "sqlserver" backend จะเก็บข้อมูลของแอปในตาราง SQL Server แทนไฟล์ JSON
+
+สคริปต์สำหรับ initial setup คือ:
+
+tests/sql-initial-setup.sql
+
+ตาราง clinical หลักที่สคริปต์นี้สร้าง:
+
+- Patient_Info
+- Diagnosis
+- Laboratory
+- Medication
+
+ตารางฝั่ง application ที่สคริปต์นี้สร้าง:
+
+- App_Users
+- User_Sessions
+- Pending_Otp
+- Saved_Cohorts
+- Audit_Session_Log
+- Feasibility_Run_Logs
+- Auth_Event_Log
+
+ขั้นตอนเตรียม SQL Server เบื้องต้น
+
+1. สร้างหรือเลือกฐานข้อมูล SQL Server ที่ต้องการใช้
+2. รันไฟล์ tests/sql-initial-setup.sql
+3. แก้ไข config/app.config.json ให้ตรงกับ connection settings ของ SQL Server
+4. ตั้ง clinicalDataSource และ appStorage เป็น "sqlserver" หากต้องการใช้ SQL Server ทั้งฝั่ง feasibility data และ app persistence
+5. ติดตั้ง dependencies ด้วย pnpm install เพื่อให้มี mssql driver
+
+Authentication และ Audit
+
+- ระบบต้อง login ก่อนใช้งาน cohort builder และหน้า logs
+- รองรับทั้ง credentials login และ Google OAuth
+- OTP ใช้สำหรับ sign-up confirmation และ password reset
+- Feasibility run logs จะเก็บ user identity, คำถาม, counts, attrition, selected concepts, full cohort config และ generated SQL
+- Audit session logs ใช้ติดตาม session activity, page views และ run counts
+
+Saved Cohorts
+
+- ผู้ใช้สามารถบันทึก cohort definition ปัจจุบัน ดูรายการที่บันทึกไว้ โหลดกลับมาใช้ และลบได้
+- Saved cohorts ปัจจุบันถูกจัดการผ่าน backend APIs
+- ตำแหน่งที่เก็บขึ้นกับค่า appStorage ไม่ได้เก็บใน browser localStorage เป็นหลักอีกแล้ว
+
+Generated SQL
+
+SQL builder จะสร้าง feasibility SQL แบบ SQL Server โดยมีสมมติฐานดังนี้:
+
+- base table: Patient_Info
+- patient key: OH_PID
+- diagnosis table: Diagnosis
+- laboratory table: Laboratory
+- medication table: Medication
+- รูปแบบ: CTEs ร่วมกับ EXISTS และ NOT EXISTS
+- date functions: DATEDIFF, DATEADD, GETDATE, BETWEEN
+
+Generated SQL เป็น feasibility draft จึงควร review ให้ตรงกับ source schema จริงก่อนนำไปใช้ production
+
+Cloud และ Production Notes
+
+- ระบบนี้ต้องรันผ่าน Node server ที่ scripts/dev-server.mjs
+- หากต้องใช้ login, OTP, audit หรือ saved cohorts ไม่ควร deploy เป็น static files อย่างเดียว
+- สำหรับ production จริงควรเปลี่ยน demo credentials, ตั้งค่า SMTP และตั้งค่า Google OAuth ให้ครบ
+- หากเป็นสภาพแวดล้อมหลายผู้ใช้ ควรใช้ SQL-backed shared storage
+
+ขอบเขตการทำงานปัจจุบัน
+
+- รองรับเกณฑ์ feasibility จาก diagnosis, lab และ medication
+- รองรับหลาย T0 conditions พร้อม AND และ OR logic
+- รองรับ demographics, inclusion, exclusion, comorbidity และ timing rules
+- มี searchable concept pickers
+- มี saved cohorts
+- มี audit และ run logs
+- มี SQL preview สำหรับตรวจสอบ cohort logic
+

@@ -24,6 +24,59 @@ const DOMAIN_META = {
 };
 
 export function buildSql(config) {
+  const { ctes, whereClauses, normalized } = buildSqlArtifacts(config);
+  const sql = [
+    ctes.length ? `WITH ${ctes.join(',\n')}` : '',
+    'SELECT p.*',
+    'FROM BasePatients p',
+    whereClauses.length ? `WHERE ${whereClauses.join('\n')}` : ''
+  ].filter(Boolean).join('\n');
+
+  return {
+    sql,
+    summary: buildSummary(normalized)
+  };
+}
+
+export function buildFeasibilityCountSql(config) {
+  const { ctes, indexRefs, criterionRefs } = buildSqlArtifacts(config);
+  if (indexRefs.length === 0) {
+    return [
+      'SELECT',
+      '  COUNT(*) AS totalPatients,',
+      '  CAST(0 AS BIGINT) AS indexEligibleCount,',
+      '  CAST(0 AS BIGINT) AS demographicCount,',
+      '  CAST(0 AS BIGINT) AS inclusionCount,',
+      '  CAST(0 AS BIGINT) AS finalCount',
+      'FROM Patient_Info'
+    ].join('\n');
+  }
+
+  const inclusionWhere = buildFinalWhere(criterionRefs.filter((ref) => !ref.isExclusion));
+  const finalWhere = buildFinalWhere(criterionRefs);
+
+  return [
+    `WITH ${ctes.join(',\n')}`,
+    'SELECT',
+    '  (SELECT COUNT(*) FROM Patient_Info) AS totalPatients,',
+    '  (SELECT COUNT(*) FROM IndexCohort) AS indexEligibleCount,',
+    '  (SELECT COUNT(*) FROM BasePatients) AS demographicCount,',
+    `  (SELECT COUNT(*) FROM BasePatients p${inclusionWhere.length ? ` WHERE ${inclusionWhere.join('\n')}` : ''}) AS inclusionCount,`,
+    `  (SELECT COUNT(*) FROM BasePatients p${finalWhere.length ? ` WHERE ${finalWhere.join('\n')}` : ''}) AS finalCount`
+  ].join('\n');
+}
+
+function normalizeConfig(config) {
+  return {
+    indexEvents: Array.isArray(config.indexEvents) ? config.indexEvents : config.indexEvent ? [config.indexEvent] : [],
+    indexWindow: config.indexWindow || {},
+    demographics: config.demographics || {},
+    inclusionCriteria: config.inclusionCriteria || [],
+    exclusionCriteria: config.exclusionCriteria || []
+  };
+}
+
+function buildSqlArtifacts(config) {
   const normalized = normalizeConfig(config);
   const ctes = [];
   const indexRefs = [];
@@ -53,27 +106,12 @@ export function buildSql(config) {
 
   ctes.push(buildBasePatientsCte(normalized.demographics, indexRefs.length > 0));
 
-  const whereClauses = buildFinalWhere(criterionRefs);
-  const sql = [
-    ctes.length ? `WITH ${ctes.join(',\n')}` : '',
-    'SELECT p.*',
-    'FROM BasePatients p',
-    whereClauses.length ? `WHERE ${whereClauses.join('\n')}` : ''
-  ].filter(Boolean).join('\n');
-
   return {
-    sql,
-    summary: buildSummary(normalized)
-  };
-}
-
-function normalizeConfig(config) {
-  return {
-    indexEvents: Array.isArray(config.indexEvents) ? config.indexEvents : config.indexEvent ? [config.indexEvent] : [],
-    indexWindow: config.indexWindow || {},
-    demographics: config.demographics || {},
-    inclusionCriteria: config.inclusionCriteria || [],
-    exclusionCriteria: config.exclusionCriteria || []
+    normalized,
+    ctes,
+    indexRefs,
+    criterionRefs,
+    whereClauses: buildFinalWhere(criterionRefs)
   };
 }
 

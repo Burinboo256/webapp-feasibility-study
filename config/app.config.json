@@ -1,0 +1,48 @@
+{
+  "server": {
+    "host": "127.0.0.1",
+    "port": 4173,
+    "cookieSecure": false
+  },
+  "auth": {
+    "session": {
+      "cookieName": "cohort_lens_session",
+      "maxAgeSeconds": 28800
+    },
+    "oauthState": {
+      "cookieName": "cohort_lens_oauth_state",
+      "maxAgeSeconds": 600
+    },
+    "otp": {
+      "ttlMinutes": 10,
+      "maxAttempts": 5
+    },
+    "google": {
+      "clientId": "",
+      "clientSecret": "",
+      "redirectUri": "",
+      "allowedEmails": []
+    }
+  },
+  "smtp": {
+    "host": "mumail.mahidol.ac.th",
+    "port": 25,
+    "secure": false,
+    "user": "",
+    "pass": "",
+    "from": "portal.sidata.no-reply@mahidol.ac.th"
+  },
+  "clinicalDataSource": "json",
+  "appStorage": "local",
+  "sqlServer": {
+    "server": "",
+    "port": 1433,
+    "database": "",
+    "user": "",
+    "password": "",
+    "options": {
+      "encrypt": true,
+      "trustServerCertificate": false
+    }
+  }
+}

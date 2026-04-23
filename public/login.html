@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Login - Cohort Lens</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <main class="login-layout">
+      <section class="panel login-panel" aria-labelledby="loginTitle">
+        <p class="eyebrow">Secure access</p>
+        <h1 id="loginTitle">Sign in to Cohort Lens</h1>
+        <p class="hero-copy login-copy">
+          Login is required so feasibility runs can be tied to a user in the audit log.
+        </p>
+
+        <div class="auth-tabs" aria-label="Authentication options">
+          <button class="ghost active" type="button" data-auth-panel="loginPanel">Sign in</button>
+          <button class="ghost" type="button" data-auth-panel="signupPanel">Create user</button>
+          <button class="ghost" type="button" data-auth-panel="forgotPanel">Forgot password</button>
+        </div>
+
+        <section id="loginPanel" class="auth-panel">
+        <form id="loginForm" class="login-form">
+          <label class="field">
+            <span>Email</span>
+            <input id="email" type="email" autocomplete="username" required>
+          </label>
+          <label class="field">
+            <span>Password</span>
+            <input id="password" type="password" autocomplete="current-password" required>
+          </label>
+          <button class="primary" type="submit">Login with email</button>
+        </form>
+
+        <div class="login-divider"><span>or</span></div>
+
+        <a class="google-login" href="/api/auth/google">Continue with Google</a>
+
+        <p id="loginStatus" class="helper-text">
+          Demo account: <code>researcher@example.com</code> / <code>ChangeMe123!</code>
+        </p>
+        </section>
+
+        <section id="signupPanel" class="auth-panel" hidden>
+          <form id="signupForm" class="login-form">
+            <label class="field">
+              <span>Name</span>
+              <input id="signupName" type="text" autocomplete="name" required>
+            </label>
+            <label class="field">
+              <span>Email</span>
+              <input id="signupEmail" type="email" autocomplete="email" required>
+            </label>
+            <label class="field">
+              <span>Password</span>
+              <input id="signupPassword" type="password" autocomplete="new-password" minlength="8" required>
+            </label>
+            <button class="primary" type="submit">Send create-user OTP</button>
+          </form>
+          <form id="signupOtpForm" class="login-form otp-form" hidden>
+            <label class="field">
+              <span>Email OTP</span>
+              <input id="signupOtp" type="text" inputmode="numeric" maxlength="6" required>
+            </label>
+            <button class="primary" type="submit">Confirm OTP and create user</button>
+          </form>
+          <p id="signupStatus" class="helper-text">Create user requires OTP confirmation from email.</p>
+        </section>
+
+        <section id="forgotPanel" class="auth-panel" hidden>
+          <form id="forgotForm" class="login-form">
+            <label class="field">
+              <span>Email</span>
+              <input id="forgotEmail" type="email" autocomplete="email" required>
+            </label>
+            <button class="primary" type="submit">Send password reset OTP</button>
+          </form>
+          <form id="forgotOtpForm" class="login-form otp-form" hidden>
+            <label class="field">
+              <span>Email OTP</span>
+              <input id="forgotOtp" type="text" inputmode="numeric" maxlength="6" required>
+            </label>
+            <label class="field">
+              <span>New password</span>
+              <input id="forgotPassword" type="password" autocomplete="new-password" minlength="8" required>
+            </label>
+            <button class="primary" type="submit">Confirm OTP and reset password</button>
+          </form>
+          <p id="forgotStatus" class="helper-text">If the email exists, an OTP will be sent.</p>
+        </section>
+      </section>
+    </main>
+
+    <script type="module" src="/login.js"></script>
+  </body>
+</html>

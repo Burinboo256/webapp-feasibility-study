@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { diabetesPresetConfig } from '../src/cohortEngine.js';
-import { buildSql } from '../src/sqlBuilder.js';
+import { buildFeasibilityCountSql, buildSql } from '../src/sqlBuilder.js';
 
 test('buildSql creates CTE-based MSSQL for selected cohort criteria', () => {
   const { sql, summary } = buildSql(diabetesPresetConfig());
@@ -53,4 +53,16 @@ test('buildSql includes lab value filters and OR joiners', () => {
   assert.match(sql, /OR EXISTS \(SELECT 1 FROM DiagIndex2/);
   assert.match(sql, /l\.LAB_VALUE >= 7/);
   assert.match(sql, /DATEADD\(DAY, 90, p\.T0_DATE\)/);
+});
+
+test('buildFeasibilityCountSql returns staged count aliases for SQL-backed feasibility runs', () => {
+  const sql = buildFeasibilityCountSql(diabetesPresetConfig());
+
+  assert.match(sql, /^WITH /);
+  assert.match(sql, /AS totalPatients/);
+  assert.match(sql, /AS indexEligibleCount/);
+  assert.match(sql, /AS demographicCount/);
+  assert.match(sql, /AS inclusionCount/);
+  assert.match(sql, /AS finalCount/);
+  assert.match(sql, /FROM BasePatients p WHERE EXISTS \(/);
 });

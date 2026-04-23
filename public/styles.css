@@ -95,6 +95,24 @@ textarea {
   text-decoration: none;
 }
 
+.button-link {
+  background: transparent;
+}
+
+.auth-status {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.auth-user {
+  color: #f7dfb6;
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-size: 0.78rem;
+}
+
 .pill {
   border: 1px solid rgba(255, 248, 232, 0.38);
   border-radius: 999px;
@@ -181,6 +199,85 @@ h2 {
   margin: 0 auto;
   max-width: 1240px;
   padding: 28px clamp(18px, 4vw, 54px) 48px;
+}
+
+.login-layout {
+  align-items: center;
+  display: grid;
+  min-height: 100vh;
+  padding: 28px clamp(18px, 4vw, 54px);
+}
+
+.login-panel {
+  margin: 0 auto;
+  max-width: 520px;
+  width: 100%;
+}
+
+.login-panel h1 {
+  color: var(--ink);
+  font-size: clamp(2.2rem, 5vw, 4rem);
+}
+
+.login-copy {
+  color: var(--muted);
+}
+
+.login-form {
+  display: grid;
+  gap: 14px;
+  margin-top: 22px;
+}
+
+.auth-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 20px 0 6px;
+}
+
+.auth-tabs .active {
+  background: var(--accent-2);
+  color: #fffaf0;
+}
+
+.auth-panel[hidden],
+.otp-form[hidden] {
+  display: none;
+}
+
+.otp-form {
+  border-top: 1px solid var(--line);
+  margin-top: 18px;
+  padding-top: 18px;
+}
+
+.login-divider {
+  align-items: center;
+  color: var(--muted);
+  display: flex;
+  gap: 12px;
+  margin: 20px 0;
+}
+
+.login-divider::before,
+.login-divider::after {
+  background: var(--line);
+  content: "";
+  flex: 1;
+  height: 1px;
+}
+
+.google-login {
+  background: #fffdf8;
+  border: 1px solid #cabda6;
+  border-radius: 999px;
+  color: var(--deep);
+  display: block;
+  font-weight: 900;
+  padding: 14px 18px;
+  text-align: center;
+  text-decoration: none;
 }
 
 .panel,

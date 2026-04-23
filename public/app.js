@@ -1,17 +1,20 @@
-import { defaultConfig, diabetesPresetConfig, evaluateCohort } from '../src/cohortEngine.js';
+import { defaultConfig, diabetesPresetConfig } from '../src/cohortEngine.js';
 import { buildSql } from '../src/sqlBuilder.js';
 import {
-  SAVED_COHORTS_KEY,
   collectSelectedConcepts,
+  deleteSavedCohort,
   getCurrentSession,
-  readList,
   recordFeasibilityRun,
-  writeList
+  listSavedCohorts,
+  saveSavedCohort
 } from './auditStore.js';
+import { renderAuthUser, requireAuth } from './authClient.js';
 
 const state = {
-  data: null,
+  dataSource: 'json',
+  appStorage: 'local',
   conceptCatalog: {},
+  savedCohorts: [],
   config: defaultConfig(),
   currentSql: '',
   currentWorkflowSvg: ''
@@ -88,26 +91,32 @@ const presets = {
 const els = {};
 
 document.addEventListener('DOMContentLoaded', async () => {
-  bindElements();
-  getCurrentSession();
-  state.data = await loadSyntheticData();
-  state.conceptCatalog = buildConceptCatalog(state.data);
-  writeConfigToForm(state.config);
-  bindEvents();
-  run();
+  try {
+    bindElements();
+    const user = await requireAuth();
+    if (!user) return;
+    renderAuthUser(user, els.authStatus);
+    await getCurrentSession();
+    const bootstrap = await loadBootstrap();
+    state.dataSource = bootstrap.dataSource || 'json';
+    state.appStorage = bootstrap.appStorage || 'local';
+    state.conceptCatalog = bootstrap.conceptCatalog || { diagnosis: [], lab: [], drug: [] };
+    writeConfigToForm(state.config);
+    bindEvents();
+    await refreshSavedCohorts();
+    await run();
+  } catch (error) {
+    reportRuntimeError(error);
+  }
 });
 
-async function loadSyntheticData() {
-  const localResponse = await fetch('/data/synthetic-clinical-data.json');
-  if (localResponse.ok) {
-    return localResponse.json();
+async function loadBootstrap() {
+  const response = await fetch('/api/bootstrap', { credentials: 'same-origin' });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload.error || 'Unable to load bootstrap data.');
   }
-
-  const exampleResponse = await fetch('/data/synthetic-clinical-data_example.json');
-  if (!exampleResponse.ok) {
-    throw new Error('Unable to load synthetic data.');
-  }
-  return exampleResponse.json();
+  return payload;
 }
 
 function bindElements() {
@@ -144,7 +153,8 @@ function bindElements() {
     'savedCohortSelect',
     'loadSavedCohort',
     'deleteSavedCohort',
-    'savedCohortStatus'
+    'savedCohortStatus',
+    'authStatus'
   ]) {
     els[id] = document.getElementById(id);
   }
@@ -154,7 +164,7 @@ function bindEvents() {
   els.cohortForm.addEventListener('submit', (event) => {
     event.preventDefault();
     state.config = readConfigFromForm();
-    run({ logRun: true });
+    void run({ logRun: true }).catch(reportRuntimeError);
   });
   els.cohortForm.addEventListener('input', refreshSqlFromForm);
   els.cohortForm.addEventListener('change', refreshSqlFromForm);
@@ -164,10 +174,16 @@ function bindEvents() {
   els.addExclusion.addEventListener('click', () => addCriterion('exclusionList'));
   els.downloadSvg.addEventListener('click', () => downloadSvg());
   els.downloadPng.addEventListener('click', () => downloadPng());
-  els.saveCohort.addEventListener('click', () => saveCurrentCohort());
+  els.saveCohort.addEventListener('click', () => {
+    void saveCurrentCohort().catch(reportRuntimeError);
+  });
   els.savedCohortSearch.addEventListener('input', () => renderSavedCohorts(els.savedCohortSelect.value));
-  els.loadSavedCohort.addEventListener('click', () => loadSelectedCohort());
-  els.deleteSavedCohort.addEventListener('click', () => deleteSelectedCohort());
+  els.loadSavedCohort.addEventListener('click', () => {
+    void loadSelectedCohort().catch(reportRuntimeError);
+  });
+  els.deleteSavedCohort.addEventListener('click', () => {
+    void deleteSelectedCohort().catch(reportRuntimeError);
+  });
   els.copySql.addEventListener('click', async () => {
     await copyText(state.currentSql);
     els.copySql.textContent = 'Copied';
@@ -180,35 +196,27 @@ function bindEvents() {
     button.addEventListener('click', () => {
       state.config = structuredClone(presets[button.dataset.preset]);
       writeConfigToForm(state.config);
-      run();
+      void run().catch(reportRuntimeError);
     });
   });
-  renderSavedCohorts();
 }
 
-function saveCurrentCohort() {
+async function saveCurrentCohort() {
   state.config = readConfigFromForm();
-  const savedCohorts = loadSavedCohorts();
   const name = els.savedCohortName.value.trim() || defaultSavedCohortName(state.config);
-  const saved = {
+  const saved = await saveSavedCohort({
     id: crypto.randomUUID(),
     name,
-    savedAt: new Date().toISOString(),
     config: structuredClone(state.config)
-  };
-
-  if (!saveCohorts([saved, ...savedCohorts])) {
-    setSavedCohortStatus('Unable to save. Browser storage may be unavailable or full.');
-    return;
-  }
+  });
 
   els.savedCohortName.value = '';
-  renderSavedCohorts(saved.id);
-  run();
+  await refreshSavedCohorts(saved.id);
+  void run().catch(reportRuntimeError);
   setSavedCohortStatus(`Saved "${name}".`);
 }
 
-function loadSelectedCohort() {
+async function loadSelectedCohort() {
   const saved = findSelectedSavedCohort();
   if (!saved) {
     setSavedCohortStatus('Select a saved cohort to load.');
@@ -217,12 +225,12 @@ function loadSelectedCohort() {
 
   state.config = structuredClone(saved.config);
   writeConfigToForm(state.config);
-  renderSavedCohorts(saved.id);
-  run();
+  await refreshSavedCohorts(saved.id);
+  void run().catch(reportRuntimeError);
   setSavedCohortStatus(`Loaded "${saved.name}".`);
 }
 
-function deleteSelectedCohort() {
+async function deleteSelectedCohort() {
   const saved = findSelectedSavedCohort();
   if (!saved) {
     setSavedCohortStatus('Select a saved cohort to delete.');
@@ -231,17 +239,13 @@ function deleteSelectedCohort() {
 
   if (!window.confirm(`Delete saved cohort "${saved.name}"?`)) return;
 
-  if (!saveCohorts(loadSavedCohorts().filter((item) => item.id !== saved.id))) {
-    setSavedCohortStatus('Unable to delete. Browser storage may be unavailable.');
-    return;
-  }
-
-  renderSavedCohorts();
+  await deleteSavedCohort(saved.id);
+  await refreshSavedCohorts();
   setSavedCohortStatus(`Deleted "${saved.name}".`);
 }
 
 function renderSavedCohorts(selectedId = '') {
-  const savedCohorts = loadSavedCohorts();
+  const savedCohorts = state.savedCohorts;
   const searchTerm = els.savedCohortSearch.value.trim().toLowerCase();
   const filteredCohorts = searchTerm
     ? savedCohorts.filter((saved) => savedCohortSearchText(saved).includes(searchTerm))
@@ -263,7 +267,7 @@ function renderSavedCohorts(selectedId = '') {
   els.deleteSavedCohort.disabled = !hasFilteredCohorts;
 
   if (savedCohorts.length === 0) {
-    setSavedCohortStatus('Saved cohorts stay in this browser.');
+    setSavedCohortStatus(`No saved cohorts yet. Storage mode: ${state.appStorage}.`);
   } else if (!hasFilteredCohorts) {
     setSavedCohortStatus(`No saved cohorts match "${els.savedCohortSearch.value}".`);
   } else {
@@ -273,15 +277,12 @@ function renderSavedCohorts(selectedId = '') {
 
 function findSelectedSavedCohort() {
   const selectedId = els.savedCohortSelect.value;
-  return loadSavedCohorts().find((saved) => saved.id === selectedId);
+  return state.savedCohorts.find((saved) => saved.id === selectedId);
 }
 
-function loadSavedCohorts() {
-  return readList(SAVED_COHORTS_KEY).filter((item) => item?.id && item?.config);
-}
-
-function saveCohorts(savedCohorts) {
-  return writeList(SAVED_COHORTS_KEY, savedCohorts, 50);
+async function refreshSavedCohorts(selectedId = '') {
+  state.savedCohorts = (await listSavedCohorts()).filter((item) => item?.id && item?.config);
+  renderSavedCohorts(selectedId);
 }
 
 function defaultSavedCohortName(config) {
@@ -436,40 +437,13 @@ function setCriterionField(node, field, value) {
   node.querySelector(`[data-field="${field}"]`).value = value;
 }
 
-function run(options = {}) {
-  if (!state.data) return;
-  const result = evaluateCohort(state.config, state.data);
+async function run(options = {}) {
+  state.config = readConfigFromForm();
+  const result = await executeFeasibility(state.config);
   renderResult(result);
   if (options.logRun) {
-    recordFeasibilityRun(state.config, result, state.currentSql);
+    await recordFeasibilityRun(state.config, result, state.currentSql);
   }
-}
-
-function buildConceptCatalog(data) {
-  return {
-    diagnosis: summarizeDomainConcepts(data.diagnosis_record || [], 'icd_code', 'disease_name'),
-    lab: summarizeDomainConcepts(data.lab_result || [], 'test_code', 'test_name', 'test_group_name'),
-    drug: summarizeDomainConcepts(data.prescription_order || [], 'drug_code', 'drug_name', 'drug_group_name')
-  };
-}
-
-function summarizeDomainConcepts(rows, codeKey, nameKey, groupKey) {
-  const concepts = new Map();
-  for (const row of rows) {
-    const concept = {
-      code: row[codeKey],
-      name: row[nameKey],
-      groupName: groupKey ? row[groupKey] : '',
-      count: 1
-    };
-    const key = encodeConcept(concept);
-    if (concepts.has(key)) {
-      concepts.get(key).count += 1;
-    } else {
-      concepts.set(key, concept);
-    }
-  }
-  return [...concepts.values()].sort((a, b) => a.code.localeCompare(b.code));
 }
 
 function populateCriterionConcepts(node, selectedConcepts) {
@@ -627,6 +601,31 @@ function encodeConcept(concept) {
 function decodeConcept(value) {
   const [code, name] = value.split('\u001f');
   return { code, name };
+}
+
+async function executeFeasibility(config) {
+  const response = await fetch('/api/feasibility/run', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: {
+      'content-type': 'application/json'
+    },
+    body: JSON.stringify({ config })
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload.error || 'Unable to run feasibility query.');
+  }
+  state.dataSource = payload.dataSource || state.dataSource;
+  return payload.result;
+}
+
+function reportRuntimeError(error) {
+  console.error(error);
+  const message = error?.message || 'Unable to complete the requested action.';
+  if (els.heroContext) {
+    els.heroContext.textContent = message;
+  }
 }
 
 function renderResult(result) {

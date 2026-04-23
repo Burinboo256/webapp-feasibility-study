@@ -1,81 +1,119 @@
-export const SAVED_COHORTS_KEY = 'cohort-lens.savedCohorts.v1';
-export const FEASIBILITY_RUN_LOGS_KEY = 'cohort-lens.feasibilityRunLogs.v1';
-export const SESSION_LOGS_KEY = 'cohort-lens.sessionLogs.v1';
-export const SESSION_ID_KEY = 'cohort-lens.sessionId.v1';
+export const AUDIT_USER_KEY = 'cohort-lens.auditUser.v1';
 
-export function getCurrentSession() {
-  const now = new Date().toISOString();
-  let sessionId = sessionStorage.getItem(SESSION_ID_KEY);
-
-  if (!sessionId) {
-    sessionId = createId('session');
-    sessionStorage.setItem(SESSION_ID_KEY, sessionId);
-    const session = {
-      id: sessionId,
-      startedAt: now,
-      lastSeenAt: now,
-      pageViews: 1,
-      runCount: 0,
-      userAgent: navigator.userAgent
-    };
-    writeList(SESSION_LOGS_KEY, [session, ...readList(SESSION_LOGS_KEY)], 200);
-    return session;
-  }
-
-  const sessions = readList(SESSION_LOGS_KEY);
-  const existing = sessions.find((session) => session.id === sessionId);
-  if (!existing) {
-    const session = {
-      id: sessionId,
-      startedAt: now,
-      lastSeenAt: now,
-      pageViews: 1,
-      runCount: 0,
-      userAgent: navigator.userAgent
-    };
-    writeList(SESSION_LOGS_KEY, [session, ...sessions], 200);
-    return session;
-  }
-
-  existing.lastSeenAt = now;
-  existing.pageViews = Number(existing.pageViews || 0) + 1;
-  writeList(SESSION_LOGS_KEY, sessions, 200);
-  return existing;
+export async function getCurrentSession() {
+  const response = await fetch('/api/audit/session', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { accept: 'application/json' }
+  });
+  if (!response.ok) return null;
+  const payload = await response.json().catch(() => ({}));
+  return payload.session || null;
 }
 
-export function recordFeasibilityRun(config, result, sql) {
-  const session = getCurrentSession();
-  const run = {
-    id: createId('run'),
-    sessionId: session.id,
-    createdAt: new Date().toISOString(),
-    question: config.question || '',
-    indexEligibleCount: result.indexEligibleCount,
-    finalCount: result.finalCount,
-    excludedCount: result.excludedCount,
-    attrition: result.attrition,
-    selectedConcepts: collectSelectedConcepts(config),
-    config,
-    sql
+export async function recordFeasibilityRun(config, result, sql) {
+  const response = await fetch('/api/audit/run', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      question: config.question || '',
+      indexEligibleCount: result.indexEligibleCount,
+      finalCount: result.finalCount,
+      excludedCount: result.excludedCount,
+      attrition: result.attrition,
+      selectedConcepts: collectSelectedConcepts(config),
+      config,
+      sql
+    })
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload.error || 'Unable to record feasibility run.');
+  }
+  return payload.run || null;
+}
+
+export async function readAuditLogs() {
+  const response = await fetch('/api/logs', {
+    credentials: 'same-origin',
+    headers: { accept: 'application/json' }
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload.error || 'Unable to load logs.');
+  }
+  return {
+    sessions: payload.sessions || [],
+    runs: payload.runs || [],
+    appStorage: payload.appStorage || 'local'
   };
-
-  writeList(FEASIBILITY_RUN_LOGS_KEY, [run, ...readList(FEASIBILITY_RUN_LOGS_KEY)], 500);
-  incrementSessionRunCount(session.id);
-  return run;
 }
 
-export function readFeasibilityRunLogs() {
-  return readList(FEASIBILITY_RUN_LOGS_KEY);
+export async function clearAuditLogs() {
+  const response = await fetch('/api/logs', {
+    method: 'DELETE',
+    credentials: 'same-origin'
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    throw new Error(payload.error || 'Unable to clear logs.');
+  }
 }
 
-export function readSessionLogs() {
-  return readList(SESSION_LOGS_KEY);
+export async function listSavedCohorts() {
+  const response = await fetch('/api/cohorts', {
+    credentials: 'same-origin',
+    headers: { accept: 'application/json' }
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload.error || 'Unable to load saved cohorts.');
+  }
+  return payload.cohorts || [];
 }
 
-export function clearAuditLogs() {
-  localStorage.removeItem(FEASIBILITY_RUN_LOGS_KEY);
-  localStorage.removeItem(SESSION_LOGS_KEY);
-  sessionStorage.removeItem(SESSION_ID_KEY);
+export async function saveSavedCohort(cohort) {
+  const response = await fetch('/api/cohorts', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(cohort)
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload.error || 'Unable to save cohort.');
+  }
+  return payload.cohort || null;
+}
+
+export async function deleteSavedCohort(cohortId) {
+  const response = await fetch(`/api/cohorts/${encodeURIComponent(cohortId)}`, {
+    method: 'DELETE',
+    credentials: 'same-origin'
+  });
+  if (!response.ok && response.status !== 204) {
+    const payload = await response.json().catch(() => ({}));
+    throw new Error(payload.error || 'Unable to delete cohort.');
+  }
+}
+
+export function setAuditUser(user) {
+  sessionStorage.setItem(AUDIT_USER_KEY, JSON.stringify({
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    provider: user.provider,
+    role: user.role
+  }));
+}
+
+export function getAuditUser() {
+  try {
+    return JSON.parse(sessionStorage.getItem(AUDIT_USER_KEY) || 'null');
+  } catch {
+    return null;
+  }
 }
 
 export function collectSelectedConcepts(config) {
@@ -103,42 +141,10 @@ export function collectSelectedConcepts(config) {
   return summary;
 }
 
-export function readList(key) {
-  try {
-    const value = JSON.parse(localStorage.getItem(key) || '[]');
-    return Array.isArray(value) ? value : [];
-  } catch {
-    return [];
-  }
-}
-
-export function writeList(key, items, limit) {
-  try {
-    localStorage.setItem(key, JSON.stringify(items.slice(0, limit)));
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 function cohortConceptSources(config) {
   return [
     ...(config.indexEvents || []).map((item) => ({ ...item, section: 'T0' })),
     ...(config.inclusionCriteria || []).map((item) => ({ ...item, section: 'Inclusion' })),
     ...(config.exclusionCriteria || []).map((item) => ({ ...item, section: 'Exclusion' }))
   ];
-}
-
-function incrementSessionRunCount(sessionId) {
-  const sessions = readList(SESSION_LOGS_KEY);
-  const session = sessions.find((item) => item.id === sessionId);
-  if (!session) return;
-  session.runCount = Number(session.runCount || 0) + 1;
-  session.lastSeenAt = new Date().toISOString();
-  writeList(SESSION_LOGS_KEY, sessions, 200);
-}
-
-function createId(prefix) {
-  if (crypto.randomUUID) return `${prefix}-${crypto.randomUUID()}`;
-  return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }

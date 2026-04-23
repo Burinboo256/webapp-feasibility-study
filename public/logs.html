@@ -12,16 +12,17 @@
         <a class="brand" href="/">Cohort Lens</a>
         <div class="nav-actions">
           <a class="nav-link" href="/">Cohort builder</a>
-          <span class="pill">Browser-local audit</span>
+          <div id="authStatus" class="auth-status"></div>
+          <span class="pill">Audit storage</span>
         </div>
       </nav>
       <section class="hero-grid">
         <div>
           <p class="eyebrow">Session monitoring</p>
-          <h1>Feasibility run logs and local usage sessions.</h1>
+          <h1>Feasibility run logs and usage sessions.</h1>
           <p class="hero-copy">
-            Audit records are stored in this browser. Use a backend audit service later if monitoring must
-            cover multiple users, devices, or workstations.
+            This page reads audit records from the active backend storage mode. Local mode stays on this server;
+            SQL mode uses the shared SQL database.
           </p>
         </div>
       </section>
@@ -40,11 +41,11 @@
           </div>
         </div>
         <div class="kpi-grid log-kpis">
-          <article class="kpi"><span>Browser sessions</span><strong id="sessionCount">0</strong></article>
+          <article class="kpi"><span>Tracked sessions</span><strong id="sessionCount">0</strong></article>
           <article class="kpi"><span>Feasibility runs</span><strong id="runCount">0</strong></article>
           <article class="kpi accent"><span>Latest final cohort</span><strong id="latestFinalCount">0</strong></article>
         </div>
-        <p class="helper-text">This page reports local browser usage only. It cannot count other users until a shared backend is added.</p>
+        <p class="helper-text">Logs are filtered to the signed-in user and come from the configured app storage backend.</p>
       </section>
 
       <section class="panel" aria-labelledby="runLogTitle">
@@ -69,6 +70,7 @@
             <thead>
               <tr>
                 <th>Session</th>
+                <th>User</th>
                 <th>Started</th>
                 <th>Last seen</th>
                 <th>Runs</th>

@@ -1,17 +1,25 @@
 import {
   clearAuditLogs,
   getCurrentSession,
-  readFeasibilityRunLogs,
-  readSessionLogs
+  readAuditLogs
 } from './auditStore.js';
+import { renderAuthUser, requireAuth } from './authClient.js';
 
 const els = {};
+const state = {
+  appStorage: 'local',
+  sessions: [],
+  runs: []
+};
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   bindElements();
-  getCurrentSession();
+  const user = await requireAuth();
+  if (!user) return;
+  renderAuthUser(user, els.authStatus);
+  await getCurrentSession();
   bindEvents();
-  renderLogs();
+  await renderLogs();
 });
 
 function bindElements() {
@@ -23,33 +31,42 @@ function bindElements() {
     'clearLogs',
     'logSearch',
     'runLogList',
-    'sessionLogRows'
+    'sessionLogRows',
+    'authStatus'
   ]) {
     els[id] = document.getElementById(id);
   }
 }
 
 function bindEvents() {
-  els.logSearch.addEventListener('input', renderLogs);
+  els.logSearch.addEventListener('input', () => {
+    void renderLogs().catch(reportRuntimeError);
+  });
   els.exportLogs.addEventListener('click', exportLogs);
   els.clearLogs.addEventListener('click', () => {
-    if (!window.confirm('Clear all local session and feasibility run logs?')) return;
-    clearAuditLogs();
-    getCurrentSession();
-    renderLogs();
+    void clearLogs().catch(reportRuntimeError);
   });
 }
 
-function renderLogs() {
-  const sessions = readSessionLogs();
-  const runs = readFeasibilityRunLogs();
-  const filteredRuns = filterRuns(runs, els.logSearch.value);
+async function clearLogs() {
+  if (!window.confirm('Clear all session and feasibility run logs for your account?')) return;
+  await clearAuditLogs();
+  await getCurrentSession();
+  await renderLogs();
+}
 
-  els.sessionCount.textContent = sessions.length;
-  els.runCount.textContent = runs.length;
-  els.latestFinalCount.textContent = runs[0]?.finalCount ?? 0;
+async function renderLogs() {
+  const payload = await readAuditLogs();
+  state.sessions = payload.sessions || [];
+  state.runs = payload.runs || [];
+  state.appStorage = payload.appStorage || 'local';
+  const filteredRuns = filterRuns(state.runs, els.logSearch.value);
+
+  els.sessionCount.textContent = state.sessions.length;
+  els.runCount.textContent = state.runs.length;
+  els.latestFinalCount.textContent = state.runs[0]?.finalCount ?? 0;
   renderRunLogs(filteredRuns);
-  renderSessionLogs(sessions);
+  renderSessionLogs(state.sessions);
 }
 
 function filterRuns(runs, query) {
@@ -72,7 +89,7 @@ function renderRunLogs(runs) {
         <div class="run-log-header">
           <div>
             <strong>${escapeHtml(run.question || 'Untitled cohort')}</strong>
-            <p>${escapeHtml(formatDate(run.createdAt))} · ${escapeHtml(shortId(run.sessionId))}</p>
+            <p>${escapeHtml(formatDate(run.createdAt))} · ${escapeHtml(shortId(run.sessionId))} · ${escapeHtml(run.user?.email || 'unknown user')}</p>
           </div>
           <div class="run-log-counts">
             <span>T0 ${run.indexEligibleCount ?? 0}</span>
@@ -92,7 +109,7 @@ function renderRunLogs(runs) {
 
 function renderSessionLogs(sessions) {
   if (sessions.length === 0) {
-    els.sessionLogRows.innerHTML = '<tr><td colspan="5">No session logs found.</td></tr>';
+    els.sessionLogRows.innerHTML = '<tr><td colspan="6">No session logs found.</td></tr>';
     return;
   }
 
@@ -101,6 +118,7 @@ function renderSessionLogs(sessions) {
       const row = document.createElement('tr');
       row.innerHTML = `
         <td>${escapeHtml(shortId(session.id))}</td>
+        <td>${escapeHtml(session.user?.email || 'unknown user')}</td>
         <td>${escapeHtml(formatDate(session.startedAt))}</td>
         <td>${escapeHtml(formatDate(session.lastSeenAt))}</td>
         <td>${Number(session.runCount || 0)}</td>
@@ -114,8 +132,9 @@ function renderSessionLogs(sessions) {
 function exportLogs() {
   const payload = {
     exportedAt: new Date().toISOString(),
-    sessions: readSessionLogs(),
-    feasibilityRuns: readFeasibilityRunLogs()
+    appStorage: state.appStorage,
+    sessions: state.sessions,
+    feasibilityRuns: state.runs
   };
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
@@ -144,7 +163,7 @@ function runSearchText(run) {
     .flat()
     .map((concept) => `${concept.section} ${concept.code} ${concept.name}`)
     .join(' ');
-  return `${run.sessionId || ''} ${run.question || ''} ${concepts}`.toLowerCase();
+  return `${run.sessionId || ''} ${run.user?.email || ''} ${run.question || ''} ${concepts}`.toLowerCase();
 }
 
 function formatDate(value) {
@@ -161,6 +180,11 @@ function formatDate(value) {
 
 function shortId(value = '') {
   return value.split('-').slice(0, 2).join('-') || 'unknown';
+}
+
+function reportRuntimeError(error) {
+  console.error(error);
+  els.runLogList.innerHTML = `<p class="helper-text">${escapeHtml(error?.message || 'Unable to load logs.')}</p>`;
 }
 
 function escapeHtml(value = '') {
