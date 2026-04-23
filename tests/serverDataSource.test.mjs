@@ -119,7 +119,7 @@ test('server config defaults DATA_SOURCE to json when unset', async () => {
   try {
     const config = await loadServerConfig();
     assert.equal(config.dataSource, 'json');
-    assert.match(config.configPath, /config[\\/]+app\.config\.json$/);
+    assert.match(config.configPath, /config[\\/]+app\.config(?:\.example)?\.json$/);
   } finally {
     if (previous === undefined) {
       delete process.env.DATA_SOURCE;

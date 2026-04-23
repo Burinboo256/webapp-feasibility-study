@@ -4,8 +4,7 @@ import { normalizeDataSource } from './dataSourceConfig.js';
 
 export async function loadServerConfig(options = {}) {
   const normalized = normalizeLoadOptions(options);
-  const configPath = normalized.configPath || join(normalized.root, 'config', 'app.config.json');
-  const fileConfig = JSON.parse(await readFile(configPath, 'utf8'));
+  const { path: configPath, data: fileConfig } = await loadConfigFile(normalized);
   const config = applyEnvOverrides(fileConfig, normalized.env);
   const redirectUri = config.auth.google.redirectUri || defaultGoogleRedirectUri(config.server.host, config.server.port);
 
@@ -174,4 +173,30 @@ function readBoolean(value, fallback) {
   if (value === undefined) return fallback;
   if (typeof value === 'boolean') return value;
   return String(value).toLowerCase() === 'true';
+}
+
+async function loadConfigFile(normalized) {
+  if (normalized.configPath) {
+    return {
+      path: normalized.configPath,
+      data: JSON.parse(await readFile(normalized.configPath, 'utf8'))
+    };
+  }
+
+  const localPath = join(normalized.root, 'config', 'app.config.json');
+  const examplePath = join(normalized.root, 'config', 'app.config.example.json');
+
+  try {
+    return {
+      path: localPath,
+      data: JSON.parse(await readFile(localPath, 'utf8'))
+    };
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error;
+  }
+
+  return {
+    path: examplePath,
+    data: JSON.parse(await readFile(examplePath, 'utf8'))
+  };
 }

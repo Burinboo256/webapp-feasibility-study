@@ -4,4 +4,8 @@ dist/
 coverage/
 .env
 .env.*
+config/*.json
+!config/*.example.json
+data/*.json
+!data/*.example.json
 public/data/synthetic-clinical-data.json

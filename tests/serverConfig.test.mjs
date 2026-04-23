@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import test from 'node:test';
 
 async function importModule(relativePath) {
@@ -45,7 +48,7 @@ async function createFeasibilityService(options = {}) {
 test('server config loader reads one central config file and returns structured settings', async () => {
   const config = await loadServerConfig();
 
-  assert.match(config.configPath, /config[\\/]+app\.config\.json$/);
+  assert.match(config.configPath, /config[\\/]+app\.config(?:\.example)?\.json$/);
   assert.equal(config.server.host, '127.0.0.1');
   assert.equal(config.server.port, 4173);
   assert.equal(config.server.cookieSecure, false);
@@ -72,6 +75,72 @@ test('server config loader reads one central config file and returns structured 
   assert.equal(config.sqlServer.port, 1433);
   assert.equal(config.sqlServer.options.encrypt, true);
   assert.equal(config.sqlServer.options.trustServerCertificate, false);
+});
+
+test('server config loader falls back to app.config.example.json when the local config file is absent', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'webapp-config-example-'));
+  const configDir = path.join(root, 'config');
+  await mkdir(configDir, { recursive: true });
+  await writeFile(
+    path.join(configDir, 'app.config.example.json'),
+    JSON.stringify({
+      server: {
+        host: '0.0.0.0',
+        port: 5090,
+        cookieSecure: true
+      },
+      auth: {
+        session: {
+          cookieName: 'demo_session',
+          maxAgeSeconds: 900
+        },
+        oauthState: {
+          cookieName: 'demo_oauth_state',
+          maxAgeSeconds: 120
+        },
+        otp: {
+          ttlMinutes: 15,
+          maxAttempts: 3
+        },
+        google: {
+          clientId: '',
+          clientSecret: '',
+          redirectUri: '',
+          allowedEmails: []
+        }
+      },
+      smtp: {
+        host: '',
+        port: 587,
+        secure: false,
+        user: '',
+        pass: '',
+        from: ''
+      },
+      clinicalDataSource: 'json',
+      appStorage: 'local',
+      sqlServer: {
+        server: '',
+        port: 1433,
+        database: '',
+        user: '',
+        password: '',
+        options: {
+          encrypt: true,
+          trustServerCertificate: false
+        }
+      }
+    }, null, 2),
+    'utf8'
+  );
+
+  const config = await loadServerConfig({ root, env: {} });
+
+  assert.match(config.configPath, /config[\\/]+app\.config\.example\.json$/);
+  assert.equal(config.server.host, '0.0.0.0');
+  assert.equal(config.server.port, 5090);
+  assert.equal(config.server.cookieSecure, true);
+  assert.equal(config.auth.google.redirectUri, 'http://0.0.0.0:5090/api/auth/google/callback');
 });
 
 test('server config loader lets env overrides win for PORT and DATA_SOURCE', async () => {

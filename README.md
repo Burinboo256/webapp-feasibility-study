@@ -9,7 +9,7 @@ Repository: https://github.com/Burinboo256/webapp-feasibility-study
 - `npm install` installs runtime dependencies.
 - `npm run dev` starts a local static server at `http://localhost:4173`.
 - `npm test` runs the cohort feasibility engine tests.
-- `node scripts/hash-password.mjs "new-password"` generates a bcrypt hash for `data/users.json`.
+- `node scripts/hash-password.mjs "new-password"` generates a bcrypt hash for your local `data/users.json`.
 
 ## Local Setup
 
@@ -20,29 +20,43 @@ Repository: https://github.com/Burinboo256/webapp-feasibility-study
 npm install
 ```
 
-3. Create a local synthetic dataset if needed:
+3. Create local config and credential files from the checked-in examples:
+
+```bash
+cp config/app.config.example.json config/app.config.json
+cp data/users.example.json data/users.json
+cp data/user-sessions.example.json data/user-sessions.json
+cp data/pending-otps.example.json data/pending-otps.json
+cp data/saved-cohorts.example.json data/saved-cohorts.json
+cp data/feasibility-run-logs.example.json data/feasibility-run-logs.json
+cp data/audit-session-logs.example.json data/audit-session-logs.json
+```
+
+4. Create a local synthetic dataset if needed:
 
 ```bash
 cp public/data/synthetic-clinical-data_example.json public/data/synthetic-clinical-data.json
 ```
 
-4. Start the app:
+5. Start the app:
 
 ```bash
 npm run dev
 ```
 
-5. Open `http://127.0.0.1:4173`.
+6. Open `http://127.0.0.1:4173`.
 
 ## Configuration
 
-The app now uses one checked-in config file:
+The repo now keeps only the checked-in config template:
 
 ```text
-config/app.config.json
+config/app.config.example.json
 ```
 
-Use that file to control:
+Create your local `config/app.config.json` from the example before editing it. The local file is Git-ignored so secrets do not get committed again.
+
+Use the config file to control:
 
 - server host, port, and secure-cookie behavior
 - OTP/session settings
@@ -86,7 +100,7 @@ Development sessions are stored in server memory. Restarting `npm run dev` clear
 
 Credentials provider:
 
-- User records are stored in `data/users.json`.
+- User records are loaded from local `data/users.json`, with `data/users.example.json` as the checked-in template.
 - Passwords are stored as bcrypt hashes in `passwordHash`.
 - Development demo account: `researcher@example.com` / `ChangeMe123!`.
 - Replace the demo account before using the app with non-demo data.
@@ -95,13 +109,13 @@ Credentials provider:
 
 Email OTP:
 
-- Set SMTP values in `config/app.config.json` to send real OTP email.
+- Set SMTP values in your local `config/app.config.json` to send real OTP email.
 - If SMTP host is blank, OTPs are printed to the dev server console for local testing.
 - If SMTP delivery fails while running in local mode, the app falls back to the dev server console and returns a clear warning message.
 
 Google OAuth provider:
 
-- Set Google OAuth values in `config/app.config.json`.
+- Set Google OAuth values in your local `config/app.config.json`.
 - If redirect URI is blank, the app derives `http://<host>:<port>/api/auth/google/callback` from the server settings.
 - Allowed emails can be configured in the file or overridden with `GOOGLE_ALLOWED_EMAILS`.
 
@@ -120,7 +134,7 @@ Typical cloud setup:
 1. Deploy the repository to a Node-capable host such as Render, Railway, Fly.io, Azure App Service, AWS Elastic Beanstalk, a VM, or an internal hospital server.
 2. Run `npm install` during build.
 3. Start with `npm run dev` or `node scripts/dev-server.mjs`.
-4. Update `config/app.config.json` for the target environment.
+4. Create `config/app.config.json` from `config/app.config.example.json`, then update the local file for the target environment.
 5. Override `HOST` or `PORT` only when the platform injects them dynamically.
 6. Configure Google OAuth redirect URL to match the public app URL.
 7. Configure SMTP variables so OTP emails are actually sent.
@@ -135,7 +149,7 @@ HOST=0.0.0.0 PORT=4173 npm run dev
 Example production-style config values:
 
 ```bash
-Edit config/app.config.json, for example:
+Edit your local config/app.config.json, for example:
 
 server.host=0.0.0.0
 server.port=4173
@@ -204,7 +218,7 @@ Create-user and forgot-password flows require OTP confirmation by email.
 
 ### User Table Configuration
 
-Credentials users are stored in `data/users.json`.
+Credentials users are stored in your local `data/users.json`. Start from `data/users.example.json` and keep the local file out of Git.
 
 User shape:
 

@@ -221,12 +221,22 @@ export class LocalAppStorage {
   }
 
   async readUsers() {
-    return this.readJson(this.paths.users);
+    return this.readJson(this.paths.users, { fallbackPath: toExamplePath(this.paths.users) });
   }
 
-  async readJson(filePath) {
+  async readJson(filePath, options = {}) {
     try {
       const raw = await readFile(filePath, 'utf8');
+      const data = JSON.parse(raw);
+      return Array.isArray(data) ? data : [];
+    } catch (error) {
+      if (error?.code !== 'ENOENT' || !options.fallbackPath) {
+        return [];
+      }
+    }
+
+    try {
+      const raw = await readFile(options.fallbackPath, 'utf8');
       const data = JSON.parse(raw);
       return Array.isArray(data) ? data : [];
     } catch {
@@ -238,4 +248,8 @@ export class LocalAppStorage {
     await mkdir(join(this.root, 'data'), { recursive: true });
     await writeFile(filePath, `${JSON.stringify(data, null, 2)}\n`, 'utf8');
   }
+}
+
+function toExamplePath(filePath) {
+  return filePath.replace(/\.json$/, '.example.json');
 }

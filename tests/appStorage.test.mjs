@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
@@ -64,4 +64,32 @@ test('local app storage can save and list cohorts and run logs', async () => {
   assert.equal(cohorts[0].name, 'Test Cohort');
   assert.equal(runs.length, 1);
   assert.equal(runs[0].finalCount, 5);
+});
+
+test('local app storage falls back to users.example.json when users.json is absent', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'webapp-local-storage-example-'));
+  await mkdir(path.join(root, 'data'), { recursive: true });
+  await writeFile(
+    path.join(root, 'data', 'users.example.json'),
+    JSON.stringify([
+      {
+        id: 'user-researcher-001',
+        email: 'researcher@example.com',
+        name: 'Demo Researcher',
+        role: 'researcher',
+        passwordHash: '$2b$12$demo',
+        active: true
+      }
+    ], null, 2),
+    'utf8'
+  );
+
+  const module = await importModule('../src/server/localAppStorage.js');
+  const LocalAppStorage = getExport(module, ['LocalAppStorage']);
+  const storage = new LocalAppStorage({ root });
+
+  const user = await storage.getUserByEmail('researcher@example.com');
+
+  assert.equal(user?.name, 'Demo Researcher');
+  assert.equal(user?.role, 'researcher');
 });
