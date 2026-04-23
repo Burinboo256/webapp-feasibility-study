@@ -59,12 +59,12 @@ test('server config loader reads one central config file and returns structured 
   assert.equal(config.auth.google.clientSecret, '');
   assert.equal(config.auth.google.redirectUri, 'http://127.0.0.1:4173/api/auth/google/callback');
   assert.deepEqual(config.auth.google.allowedEmails, []);
-  assert.equal(config.smtp.host, 'mumail.mahidol.ac.th');
-  assert.equal(config.smtp.port, 25);
+  assert.equal(config.smtp.host, '');
+  assert.equal(config.smtp.port, 587);
   assert.equal(config.smtp.secure, false);
   assert.equal(config.smtp.user, '');
   assert.equal(config.smtp.pass, '');
-  assert.equal(config.smtp.from, 'portal.sidata.no-reply@mahidol.ac.th');
+  assert.equal(config.smtp.from, '');
   assert.equal(config.clinicalDataSource, 'json');
   assert.equal(config.dataSource, 'json');
   assert.equal(config.appStorage, 'local');

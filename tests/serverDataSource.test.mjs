@@ -141,8 +141,8 @@ test('server config loads server, auth, smtp, and data-source settings from one 
   assert.equal(config.auth.otp.ttlMinutes, 10);
   assert.equal(config.auth.otp.maxAttempts, 5);
   assert.equal(typeof config.auth.google.redirectUri, 'string');
-  assert.equal(config.smtp.host, 'mumail.mahidol.ac.th');
-  assert.equal(config.smtp.port, 25);
+  assert.equal(config.smtp.host, '');
+  assert.equal(config.smtp.port, 587);
   assert.equal(config.dataSource, 'json');
   assert.equal(config.sqlServer.port, 1433);
 });

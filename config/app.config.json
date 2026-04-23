@@ -25,12 +25,12 @@
     }
   },
   "smtp": {
-    "host": "mumail.mahidol.ac.th",
-    "port": 25,
+    "host": "",
+    "port": 587,
     "secure": false,
     "user": "",
     "pass": "",
-    "from": "portal.sidata.no-reply@mahidol.ac.th"
+    "from": ""
   },
   "clinicalDataSource": "json",
   "appStorage": "local",
