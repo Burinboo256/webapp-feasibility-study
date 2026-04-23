@@ -1,0 +1,10 @@
+[
+  {
+    "id": "user-researcher-001",
+    "email": "researcher@example.com",
+    "name": "Demo Researcher",
+    "role": "researcher",
+    "passwordHash": "$2b$12$D5dI7wF4dS9TZB8nzmfGRe64pzEy2pIpn8ilUdbB5Hrv6sW5axpjW",
+    "active": true
+  }
+]
