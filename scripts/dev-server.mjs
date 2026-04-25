@@ -6,6 +6,7 @@ import bcrypt from 'bcryptjs';
 import { createFeasibilityService } from '../src/server/createFeasibilityService.js';
 import { createAppStorageService } from '../src/server/createAppStorageService.js';
 import { loadServerConfig } from '../src/server/config.js';
+import { createCohortRequestDeliveryService } from '../src/server/cohortRequestDelivery.js';
 import { createOtpDeliveryService } from '../src/server/otpDelivery.js';
 
 const root = resolve(process.cwd());
@@ -20,6 +21,10 @@ const maxOtpAttempts = appConfig.auth.otp.maxAttempts;
 const feasibilityService = createFeasibilityService({ root, config: appConfig });
 const appStorage = createAppStorageService({ root, config: appConfig });
 const otpDelivery = createOtpDeliveryService({
+  smtp: appConfig.smtp,
+  allowConsoleFallbackOnSmtpFailure: isLocalDevSmtpFallbackEnabled(appConfig)
+});
+const cohortRequestDelivery = createCohortRequestDeliveryService({
   smtp: appConfig.smtp,
   allowConsoleFallbackOnSmtpFailure: isLocalDevSmtpFallbackEnabled(appConfig)
 });
@@ -76,6 +81,45 @@ async function handleApi(request, response, url) {
       return sendJson(response, 200, await feasibilityService.runFeasibility(body.config || {}));
     } catch (error) {
       return sendJson(response, 500, { error: error.message || 'Unable to run feasibility query.' });
+    }
+  }
+
+  if (request.method === 'POST' && url.pathname === '/api/cohort-request') {
+    const user = await getSessionUser(request);
+    if (!user) return sendJson(response, 401, { error: 'Not authenticated' });
+    const body = await readJsonBody(request);
+    const email = normalizeEmail(body.email);
+    const requesterName = String(body.name || '').trim();
+    const requestReason = String(body.requestReason || '').trim();
+
+    if (!isValidEmail(email) || !requesterName || !requestReason) {
+      return sendJson(response, 400, { error: 'Email, name-surname, and request reason are required.' });
+    }
+
+    try {
+      const delivery = await cohortRequestDelivery.sendRequestEmail({
+        to: email,
+        requesterName,
+        requestReason,
+        question: String(body.question || '').trim(),
+        dataSource: String(body.dataSource || appConfig.clinicalDataSource || ''),
+        indexEligibleCount: Number(body.indexEligibleCount || 0),
+        finalCount: Number(body.finalCount || 0),
+        excludedCount: Number(body.excludedCount || 0),
+        sqlSummary: String(body.sqlSummary || '').trim(),
+        attrition: Array.isArray(body.attrition) ? body.attrition : [],
+        sql: String(body.sql || ''),
+        workflowSvg: String(body.workflowSvg || '')
+      });
+      return sendJson(response, 200, {
+        ok: true,
+        mode: delivery.mode,
+        message: delivery.mode === 'email'
+          ? `Request sent to ${email}.`
+          : (delivery.warning || 'Request email was written to the server console.')
+      });
+    } catch (error) {
+      return sendJson(response, 500, { error: error.message || 'Unable to send cohort request email.' });
     }
   }
 

@@ -1,9 +1,8 @@
-import { defaultConfig, diabetesPresetConfig, normalizeCohortConfig } from '../src/cohortEngine.js';
+import { defaultConfig, normalizeCohortConfig } from '../src/cohortEngine.js';
 import { buildSql } from '../src/sqlBuilder.js';
 import {
   FILTER_FIELDSETS,
   conditionValuesFromTree,
-  createCondition,
   createConditionGroup,
   validateConditionGroup
 } from '../src/advancedConditions.js';
@@ -26,67 +25,6 @@ const state = {
   currentWorkflowSvg: ''
 };
 
-const presets = {
-  diabetes: diabetesPresetConfig(),
-  lab: {
-    ...diabetesPresetConfig(),
-    question: 'Patients with HbA1c >= 8.0 and a diabetes diagnosis within 90 days before or after the lab T0.',
-    indexEvents: [
-      {
-        id: 'idx-high-hba1c',
-        label: 'High HbA1c lab at T0',
-        joiner: 'AND',
-        filter: filterGroup([
-          equals('domain', 'lab'),
-          equals('code', 'HBA1C'),
-          createCondition({ field: 'numericValue', operator: 'greater_than_or_equal', value: '8' })
-        ])
-      }
-    ],
-    inclusionCriteria: [
-      {
-        id: 'inc-diabetes-around-lab',
-        joiner: 'AND',
-        label: 'Diabetes diagnosis within 90 days of lab T0',
-        filter: filterGroup([
-          equals('domain', 'diagnosis'),
-          anyCode(['E11.9', 'E11.65', 'E11.22']),
-          createCondition({ field: 'daysFromT0', operator: 'between', value: { from: '-90', to: '90' } })
-        ])
-      }
-    ],
-    exclusionCriteria: []
-  },
-  stroke: {
-    ...diabetesPresetConfig(),
-    question: 'Inpatient stroke patients with aspirin released after T0.',
-    indexEvents: [
-      {
-        id: 'idx-stroke',
-        label: 'Stroke diagnosis at T0',
-        joiner: 'AND',
-        filter: filterGroup([
-          equals('domain', 'diagnosis'),
-          equals('code', 'I63.9')
-        ])
-      }
-    ],
-    inclusionCriteria: [
-      {
-        id: 'inc-aspirin-after-stroke',
-        label: 'Aspirin released within 14 days after T0',
-        joiner: 'AND',
-        filter: filterGroup([
-          equals('domain', 'drug'),
-          equals('code', 'ASP81'),
-          createCondition({ field: 'daysFromT0', operator: 'between', value: { from: '0', to: '14' } })
-        ])
-      }
-    ],
-    exclusionCriteria: []
-  }
-};
-
 const els = {};
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -100,6 +38,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     state.dataSource = bootstrap.dataSource || 'json';
     state.appStorage = bootstrap.appStorage || 'local';
     writeConfigToForm(state.config);
+    prefillRequestCohortForm(user);
     bindEvents();
     await refreshSavedCohorts();
     await run();
@@ -119,7 +58,6 @@ async function loadBootstrap() {
 
 function bindElements() {
   for (const id of [
-    'question',
     'cohortForm',
     'addIndexCondition',
     'indexConditionList',
@@ -142,6 +80,12 @@ function bindElements() {
     'generatedSql',
     'sqlSummary',
     'copySql',
+    'requestCohortForm',
+    'requestEmail',
+    'requestName',
+    'requestReason',
+    'requestCohort',
+    'requestCohortStatus',
     'addInclusion',
     'addExclusion',
     'savedCohortName',
@@ -161,6 +105,10 @@ function bindEvents() {
   els.cohortForm.addEventListener('submit', (event) => {
     event.preventDefault();
     void run({ logRun: true }).catch(reportRuntimeError);
+  });
+  els.requestCohortForm.addEventListener('submit', (event) => {
+    event.preventDefault();
+    void submitCohortRequest();
   });
   els.cohortForm.addEventListener('input', () => {
     void refreshSqlFromForm();
@@ -190,14 +138,6 @@ function bindEvents() {
     setTimeout(() => {
       els.copySql.textContent = 'Copy SQL';
     }, 1200);
-  });
-
-  document.querySelectorAll('[data-preset]').forEach((button) => {
-    button.addEventListener('click', () => {
-      state.config = structuredClone(presets[button.dataset.preset]);
-      writeConfigToForm(state.config);
-      void run().catch(reportRuntimeError);
-    });
   });
 }
 
@@ -319,7 +259,6 @@ function savedCohortSearchText(saved) {
 
 function writeConfigToForm(config) {
   const normalized = normalizeCohortConfig(config);
-  els.question.value = config.question || '';
   els.indexFrom.value = config.indexWindow?.from || '';
   els.indexTo.value = config.indexWindow?.to || '';
   els.minAge.value = config.demographics?.minAge ?? '';
@@ -337,7 +276,7 @@ function writeConfigToForm(config) {
 
 function readConfigFromForm(options = {}) {
   const config = {
-    question: els.question.value.trim(),
+    question: '',
     indexEvents: readRules(els.indexConditionList, FILTER_FIELDSETS.index),
     indexWindow: {
       from: els.indexFrom.value,
@@ -468,6 +407,70 @@ async function refreshSqlFromForm() {
     els.generatedSql.textContent = error.message;
     els.sqlSummary.textContent = 'Criteria: invalid filter configuration';
   }
+}
+
+function prefillRequestCohortForm(user) {
+  els.requestEmail.value = user?.email || '';
+  els.requestName.value = user?.name || '';
+  setRequestCohortStatus('The email includes cohort summary, attrition, and the workflow SVG attachment.');
+}
+
+async function submitCohortRequest() {
+  const email = els.requestEmail.value.trim();
+  const name = els.requestName.value.trim();
+  const requestReason = els.requestReason.value.trim();
+
+  if (!email || !name || !requestReason) {
+    setRequestCohortStatus('Email, name-surname, and request reason are required.', true);
+    return;
+  }
+
+  els.requestCohort.disabled = true;
+  els.requestCohort.textContent = 'Sending...';
+
+  try {
+    state.config = readConfigFromForm({ validate: true });
+    const result = await executeFeasibility(state.config);
+    renderResult(result);
+    await refreshSqlFromForm();
+
+    const response = await fetch('/api/cohort-request', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify({
+        email,
+        name,
+        requestReason,
+        question: state.config.question || '',
+        dataSource: state.dataSource,
+        indexEligibleCount: result.indexEligibleCount,
+        finalCount: result.finalCount,
+        excludedCount: result.excludedCount,
+        sqlSummary: els.sqlSummary.textContent || '',
+        attrition: result.attrition,
+        sql: state.currentSql,
+        workflowSvg: serializeWorkflowSvg()
+      })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(payload.error || 'Unable to send cohort request email.');
+    }
+    setRequestCohortStatus(payload.message || `Request sent to ${email}.`);
+  } catch (error) {
+    setRequestCohortStatus(error?.message || 'Unable to send cohort request email.', true);
+  } finally {
+    els.requestCohort.disabled = false;
+    els.requestCohort.textContent = 'Request Cohort';
+  }
+}
+
+function setRequestCohortStatus(message, isError = false) {
+  els.requestCohortStatus.textContent = message;
+  els.requestCohortStatus.classList.toggle('request-error', Boolean(isError));
 }
 
 function renderAttrition(result) {
@@ -699,19 +702,4 @@ function escapeHtml(value = '') {
 
 function escapeSvg(value = '') {
   return escapeHtml(value);
-}
-
-function filterGroup(children) {
-  return createConditionGroup({ logic: 'AND', children });
-}
-
-function equals(field, value) {
-  return createCondition({ field, operator: 'is', value });
-}
-
-function anyCode(values) {
-  return createConditionGroup({
-    logic: 'OR',
-    children: values.map((value) => equals('code', value))
-  });
 }

@@ -11,7 +11,7 @@
       <nav class="topbar" aria-label="Application">
         <a class="brand" href="/">Cohort Lens</a>
         <div class="nav-actions">
-          <a class="nav-link" href="/dictionary.html">Master dictionary</a>
+          <a class="nav-link" href="/dictionary.html" target="_blank" rel="noreferrer">Master dictionary</a>
           <a class="nav-link" href="/logs.html">Session logs</a>
           <div id="authStatus" class="auth-status"></div>
           <span class="pill">Synthetic data only</span>
@@ -38,48 +38,8 @@
       <section class="panel builder" aria-labelledby="builderTitle">
         <div class="section-heading">
           <p class="eyebrow">Define cohort</p>
-          <h2 id="builderTitle">Feasibility question</h2>
+          <h2 id="builderTitle">Cohort builder</h2>
         </div>
-
-        <label class="field wide">
-          <span>Research question</span>
-          <textarea id="question" rows="3"></textarea>
-        </label>
-
-        <div class="quick-actions" aria-label="Preset cohort examples">
-          <button class="ghost" type="button" data-preset="diabetes">Diabetes + HbA1c + metformin</button>
-          <button class="ghost" type="button" data-preset="lab">High HbA1c lab-first cohort</button>
-          <button class="ghost" type="button" data-preset="stroke">Stroke + antiplatelet</button>
-        </div>
-
-        <section class="saved-cohorts" aria-labelledby="savedCohortsTitle">
-          <div class="saved-cohorts-heading">
-            <div>
-              <p class="eyebrow">Reusable definitions</p>
-              <h3 id="savedCohortsTitle">Saved cohort selections</h3>
-            </div>
-            <button id="saveCohort" class="small" type="button">Save current</button>
-          </div>
-          <div class="saved-cohort-controls">
-            <label class="field compact">
-              <span>Save name</span>
-              <input id="savedCohortName" type="text" placeholder="e.g. Diabetes HbA1c v1">
-            </label>
-            <label class="field compact">
-              <span>Search saved</span>
-              <input id="savedCohortSearch" type="search" placeholder="Search name, question, code, drug, lab">
-            </label>
-            <label class="field compact">
-              <span>Saved cohorts</span>
-              <select id="savedCohortSelect"></select>
-            </label>
-          </div>
-          <div class="saved-cohort-actions">
-            <button id="loadSavedCohort" class="ghost" type="button">Load selected</button>
-            <button id="deleteSavedCohort" class="ghost danger" type="button">Delete selected</button>
-          </div>
-          <p id="savedCohortStatus" class="helper-text">Saved cohorts stay in this browser.</p>
-        </section>
 
         <form id="cohortForm">
           <fieldset class="card">
@@ -87,7 +47,7 @@
               <legend>T0 index event conditions</legend>
               <button id="addIndexCondition" type="button" class="small">Add T0 condition</button>
             </div>
-            <p class="helper-text">Use nested groups to describe the qualifying T0 event. The first matching T0 rule in list order sets the cohort entry date used by inclusion and exclusion timing. Look up diagnosis, lab, and drug codes in the <a href="/dictionary.html">master dictionary</a>.</p>
+            <p class="helper-text">Use nested groups to describe the qualifying T0 event. The first matching T0 rule in list order sets the cohort entry date used by inclusion and exclusion timing. Look up diagnosis, lab, and drug codes in the <a href="/dictionary.html" target="_blank" rel="noreferrer">master dictionary</a>.</p>
             <div id="indexConditionList" class="criteria-list"></div>
             <div class="form-grid">
               <label class="field">
@@ -179,6 +139,63 @@
           </div>
           <pre class="sql-block"><code id="generatedSql"></code></pre>
           <p id="sqlSummary" class="sql-summary">Criteria: no selected criteria</p>
+        </section>
+
+        <section class="panel request-panel" aria-labelledby="requestTitle">
+          <div class="section-heading">
+            <p class="eyebrow">Request</p>
+            <h2 id="requestTitle">Request Cohort</h2>
+          </div>
+          <p class="helper-text">Send the latest cohort summary and attrition workflow to the requester email.</p>
+          <form id="requestCohortForm" class="request-cohort-form">
+            <div class="form-grid">
+              <label class="field">
+                <span>Email</span>
+                <input id="requestEmail" type="email" autocomplete="email" placeholder="researcher@example.com" required>
+              </label>
+              <label class="field">
+                <span>Name-surname</span>
+                <input id="requestName" type="text" autocomplete="name" placeholder="Demo Researcher" required>
+              </label>
+            </div>
+            <label class="field wide">
+              <span>Request reason feasibility study</span>
+              <textarea id="requestReason" rows="4" placeholder="State the feasibility-study reason for requesting this cohort summary." required></textarea>
+            </label>
+            <div class="request-cohort-actions">
+              <button id="requestCohort" class="primary" type="submit">Request Cohort</button>
+              <p id="requestCohortStatus" class="helper-text">The email includes cohort summary, attrition, and the workflow SVG attachment.</p>
+            </div>
+          </form>
+        </section>
+
+        <section class="panel saved-cohorts" aria-labelledby="savedCohortsTitle">
+          <div class="saved-cohorts-heading">
+            <div>
+              <p class="eyebrow">Reusable definitions</p>
+              <h3 id="savedCohortsTitle">Saved cohort selections</h3>
+            </div>
+            <button id="saveCohort" class="small" type="button">Save current</button>
+          </div>
+          <div class="saved-cohort-controls">
+            <label class="field compact">
+              <span>Save name</span>
+              <input id="savedCohortName" type="text" placeholder="e.g. Diabetes HbA1c v1">
+            </label>
+            <label class="field compact">
+              <span>Search saved</span>
+              <input id="savedCohortSearch" type="search" placeholder="Search name, code, drug, lab">
+            </label>
+            <label class="field compact">
+              <span>Saved cohorts</span>
+              <select id="savedCohortSelect"></select>
+            </label>
+          </div>
+          <div class="saved-cohort-actions">
+            <button id="loadSavedCohort" class="ghost" type="button">Load selected</button>
+            <button id="deleteSavedCohort" class="ghost danger" type="button">Delete selected</button>
+          </div>
+          <p id="savedCohortStatus" class="helper-text">Saved cohorts stay in this browser.</p>
         </section>
       </section>
     </main>

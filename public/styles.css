@@ -889,6 +889,31 @@ legend,
   padding: 11px 12px;
 }
 
+.request-panel {
+  display: grid;
+  gap: 16px;
+}
+
+.request-cohort-form {
+  display: grid;
+  gap: 16px;
+}
+
+.request-cohort-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.request-cohort-actions .helper-text {
+  margin: 0;
+}
+
+.request-error {
+  color: #9f1239;
+}
+
 .table-wrap {
   overflow-x: auto;
 }
