@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   FILTER_FIELDSETS,
+  conditionValuesFromTree,
   createCondition,
   createConditionGroup,
   evaluateConditionGroup,
@@ -71,4 +72,20 @@ test('normalizeRule migrates legacy timing and query fields', () => {
     groupName: '',
     daysFromT0: 10
   }, { allowedFields: FILTER_FIELDSETS.criteria }), true);
+});
+
+test('conditionValuesFromTree includes value-bearing text operators for code and name', () => {
+  const values = conditionValuesFromTree(createConditionGroup({
+    logic: 'AND',
+    children: [
+      createCondition({ field: 'code', operator: 'starts_with', value: 'E11' }),
+      createCondition({ field: 'name', operator: 'contains', value: 'diabetes' }),
+      createCondition({ field: 'code', operator: 'is_empty', value: null })
+    ]
+  }));
+
+  assert.deepEqual(values, [
+    { field: 'code', operator: 'starts_with', value: 'E11' },
+    { field: 'name', operator: 'contains', value: 'diabetes' }
+  ]);
 });

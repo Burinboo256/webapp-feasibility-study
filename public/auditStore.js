@@ -137,22 +137,24 @@ export function collectSelectedConcepts(config) {
     const domain = extractDomain(normalized.filter) || source.domain || 'diagnosis';
     for (const concept of source.concepts || []) {
       if (!summary[domain]) summary[domain] = [];
-      const key = `${source.section}|${concept.code || ''}|${concept.name || ''}`;
+      const key = `${source.section}|is|${concept.code || ''}|${concept.name || ''}`;
       if (summary[domain].some((item) => item.key === key)) continue;
       summary[domain].push({
         key,
         section: source.section,
+        operator: 'is',
         code: concept.code || '',
         name: concept.name || ''
       });
     }
     for (const value of values) {
       if (!summary[domain]) summary[domain] = [];
-      const key = `${source.section}|${value.field}|${value.value}`;
+      const key = `${source.section}|${value.field}|${value.operator || ''}|${value.value}`;
       if (summary[domain].some((item) => item.key === key)) continue;
       summary[domain].push({
         key,
         section: source.section,
+        operator: value.operator || '',
         code: value.field === 'code' ? value.value : '',
         name: value.field === 'name' ? value.value : value.value
       });

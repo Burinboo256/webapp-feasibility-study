@@ -149,7 +149,7 @@ function exportLogs() {
 
 function domainConceptSummary(label, concepts) {
   const count = concepts.length;
-  const preview = concepts.slice(0, 6).map((concept) => `${concept.code} ${concept.name}`).join(', ');
+  const preview = concepts.slice(0, 6).map((concept) => formatConceptPreview(concept)).join(', ');
   return `
     <section>
       <h3>${escapeHtml(label)} · ${count}</h3>
@@ -161,9 +161,18 @@ function domainConceptSummary(label, concepts) {
 function runSearchText(run) {
   const concepts = Object.values(run.selectedConcepts || {})
     .flat()
-    .map((concept) => `${concept.section} ${concept.code} ${concept.name}`)
+    .map((concept) => `${concept.section} ${concept.operator || ''} ${concept.code} ${concept.name}`)
     .join(' ');
   return `${run.sessionId || ''} ${run.user?.email || ''} ${run.question || ''} ${concepts}`.toLowerCase();
+}
+
+function formatConceptPreview(concept = {}) {
+  const parts = [
+    concept.operator ? `${concept.operator}` : '',
+    concept.code || '',
+    concept.name || ''
+  ].filter(Boolean);
+  return parts.join(' ');
 }
 
 function formatDate(value) {

@@ -239,12 +239,16 @@ export function conditionValuesFromTree(group, fields = ['code', 'name']) {
   const selected = [];
   visitTree(normalizeConditionGroup(group), (node) => {
     if (node.type !== 'condition' || !fields.includes(node.field)) return;
-    if (node.operator === 'is' && typeof node.value === 'string' && node.value.trim()) {
-      selected.push({ field: node.field, value: node.value.trim() });
+    const field = FILTER_FIELDS[node.field];
+    const operator = field ? operatorDefinition(field.type, node.operator) : null;
+    if (operator?.needsValue && typeof node.value === 'string' && node.value.trim()) {
+      selected.push({ field: node.field, operator: node.operator, value: node.value.trim() });
     }
     if ((node.operator === 'is_any_of' || node.operator === 'is_none_of') && Array.isArray(node.value)) {
       for (const value of node.value) {
-        if (String(value).trim()) selected.push({ field: node.field, value: String(value).trim() });
+        if (String(value).trim()) {
+          selected.push({ field: node.field, operator: node.operator, value: String(value).trim() });
+        }
       }
     }
   });
