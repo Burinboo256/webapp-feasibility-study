@@ -1,26 +1,62 @@
-const DOMAIN_META = {
+import {
+  FILTER_FIELDS,
+  FILTER_FIELDSETS,
+  conditionValuesFromTree,
+  isConditionGroupActive,
+  normalizeRule,
+  validateConditionGroup
+} from './advancedConditions.js';
+
+const EVENT_META = {
   diagnosis: {
     table: 'Diagnosis',
     alias: 'd',
-    codeColumn: 'ICD_CODE',
-    dateColumn: 'VISIT_DATE',
-    ctePrefix: 'Diag'
+    eventDate: 'VISIT_DATE',
+    code: 'ICD_CODE',
+    name: 'DISEASE_NAME',
+    groupName: null,
+    numericValue: null,
+    rawValue: null,
+    patientCategory: 'PATIENT_CATEGORY',
+    ageAtEvent: 'AGE_AT_VISIT'
   },
   lab: {
     table: 'Laboratory',
     alias: 'l',
-    codeColumn: 'LAB_CODE',
-    dateColumn: 'RESULT_DATE',
-    valueColumn: 'LAB_VALUE',
-    ctePrefix: 'Lab'
+    eventDate: 'RESULT_DATE',
+    code: 'LAB_CODE',
+    name: 'LAB_NAME',
+    groupName: 'LAB_GROUP_NAME',
+    numericValue: 'LAB_VALUE',
+    rawValue: 'LAB_VALUE',
+    patientCategory: 'PATIENT_CATEGORY',
+    ageAtEvent: 'AGE_AT_TEST'
   },
   drug: {
     table: 'Medication',
     alias: 'm',
-    codeColumn: 'DRUG_CODE',
-    dateColumn: 'ORDER_DATE',
-    ctePrefix: 'Drug'
+    eventDate: 'ORDER_DATE',
+    code: 'DRUG_CODE',
+    name: 'DRUG_NAME',
+    groupName: 'DRUG_GROUP_NAME',
+    numericValue: 'QUANTITY',
+    rawValue: 'QUANTITY',
+    patientCategory: 'SERVICE_TYPE',
+    ageAtEvent: null
   }
+};
+
+const FIELD_SQL = {
+  domain: ({ eventAlias }) => `${eventAlias}.DOMAIN`,
+  code: ({ eventAlias }) => `${eventAlias}.CODE`,
+  name: ({ eventAlias }) => `${eventAlias}.NAME`,
+  groupName: ({ eventAlias }) => `${eventAlias}.GROUP_NAME`,
+  eventDate: ({ eventAlias }) => `${eventAlias}.EVENT_DATE`,
+  numericValue: ({ eventAlias }) => `${eventAlias}.NUMERIC_VALUE`,
+  rawValue: ({ eventAlias }) => `${eventAlias}.RAW_VALUE`,
+  patientCategory: ({ eventAlias }) => `${eventAlias}.PATIENT_CATEGORY`,
+  ageAtEvent: ({ eventAlias }) => `${eventAlias}.AGE_AT_EVENT`,
+  daysFromT0: ({ eventAlias, patientAlias }) => `DATEDIFF(DAY, ${patientAlias}.T0_DATE, ${eventAlias}.EVENT_DATE)`
 };
 
 export function buildSql(config) {
@@ -29,7 +65,7 @@ export function buildSql(config) {
     ctes.length ? `WITH ${ctes.join(',\n')}` : '',
     'SELECT p.*',
     'FROM BasePatients p',
-    whereClauses.length ? `WHERE ${whereClauses.join('\n')}` : ''
+    whereClauses.length ? `WHERE ${joinWhereClauses(whereClauses)}` : ''
   ].filter(Boolean).join('\n');
 
   return {
@@ -61,31 +97,47 @@ export function buildFeasibilityCountSql(config) {
     '  (SELECT COUNT(*) FROM Patient_Info) AS totalPatients,',
     '  (SELECT COUNT(*) FROM IndexCohort) AS indexEligibleCount,',
     '  (SELECT COUNT(*) FROM BasePatients) AS demographicCount,',
-    `  (SELECT COUNT(*) FROM BasePatients p${inclusionWhere.length ? ` WHERE ${inclusionWhere.join('\n')}` : ''}) AS inclusionCount,`,
-    `  (SELECT COUNT(*) FROM BasePatients p${finalWhere.length ? ` WHERE ${finalWhere.join('\n')}` : ''}) AS finalCount`
+    `  (SELECT COUNT(*) FROM BasePatients p${inclusionWhere.length ? ` WHERE ${joinWhereClauses(inclusionWhere)}` : ''}) AS inclusionCount,`,
+    `  (SELECT COUNT(*) FROM BasePatients p${finalWhere.length ? ` WHERE ${joinWhereClauses(finalWhere)}` : ''}) AS finalCount`
   ].join('\n');
 }
 
 function normalizeConfig(config) {
   return {
-    indexEvents: Array.isArray(config.indexEvents) ? config.indexEvents : config.indexEvent ? [config.indexEvent] : [],
+    indexEvents: normalizeRules(config.indexEvents || (config.indexEvent ? [config.indexEvent] : []), FILTER_FIELDSETS.index, 'index', 'AND'),
     indexWindow: config.indexWindow || {},
     demographics: config.demographics || {},
-    inclusionCriteria: config.inclusionCriteria || [],
-    exclusionCriteria: config.exclusionCriteria || []
+    inclusionCriteria: normalizeRules(config.inclusionCriteria || [], FILTER_FIELDSETS.criteria, 'criteria', 'AND'),
+    exclusionCriteria: normalizeRules(config.exclusionCriteria || [], FILTER_FIELDSETS.criteria, 'criteria', 'OR')
   };
+}
+
+function normalizeRules(rules, allowedFields, legacyMode, defaultJoiner) {
+  return rules
+    .map((rule) => normalizeRule(rule, { allowedFields, legacyMode, defaultJoiner }))
+    .filter((rule) => {
+      const errors = validateConditionGroup(rule.filter, { allowedFields });
+      if (errors.length > 0) {
+        throw new Error(errors[0]);
+      }
+      return isConditionGroupActive(rule.filter);
+    });
 }
 
 function buildSqlArtifacts(config) {
   const normalized = normalizeConfig(config);
   const ctes = [];
-  const indexRefs = [];
   const criterionRefs = [];
+  const indexRefs = [];
+  const hasRules = normalized.indexEvents.length > 0 || normalized.inclusionCriteria.length > 0 || normalized.exclusionCriteria.length > 0;
+
+  if (hasRules) {
+    ctes.push(buildAllEventsCte());
+  }
 
   for (const [index, condition] of normalized.indexEvents.entries()) {
-    if (!hasConcepts(condition)) continue;
-    const cteName = `${DOMAIN_META[condition.domain].ctePrefix}Index${index + 1}`;
-    ctes.push(buildEventCte(cteName, condition, normalized.indexWindow));
+    const cteName = `IndexRule${index + 1}`;
+    ctes.push(buildIndexRuleCte(cteName, condition, normalized.indexWindow));
     indexRefs.push({ cteName, joiner: condition.joiner || 'AND' });
   }
 
@@ -93,15 +145,11 @@ function buildSqlArtifacts(config) {
     ctes.push(buildIndexCohortCte(indexRefs));
   }
 
-  for (const [index, criterion] of [...normalized.inclusionCriteria, ...normalized.exclusionCriteria].entries()) {
-    if (!hasConcepts(criterion)) continue;
-    const cteName = `${DOMAIN_META[criterion.domain].ctePrefix}Criteria${index + 1}`;
-    ctes.push(buildEventCte(cteName, criterion));
-    criterionRefs.push({
-      cteName,
-      criterion,
-      isExclusion: normalized.exclusionCriteria.includes(criterion)
-    });
+  for (const criterion of normalized.inclusionCriteria) {
+    criterionRefs.push({ criterion, isExclusion: false });
+  }
+  for (const criterion of normalized.exclusionCriteria) {
+    criterionRefs.push({ criterion, isExclusion: true });
   }
 
   ctes.push(buildBasePatientsCte(normalized.demographics, indexRefs.length > 0));
@@ -115,34 +163,41 @@ function buildSqlArtifacts(config) {
   };
 }
 
-function buildEventCte(cteName, condition, indexWindow = {}) {
-  const meta = DOMAIN_META[condition.domain];
-  const alias = meta.alias;
-  const clauses = [
-    `${alias}.${meta.codeColumn} IN (${sqlList(condition.concepts.map((concept) => concept.code))})`
-  ];
+function buildAllEventsCte() {
+  const unions = Object.entries(EVENT_META).map(([domain, meta]) => `
+    SELECT
+      ${meta.alias}.OH_PID,
+      '${domain}' AS DOMAIN,
+      ${meta.alias}.${meta.eventDate} AS EVENT_DATE,
+      ${meta.alias}.${meta.code} AS CODE,
+      ${meta.alias}.${meta.name} AS NAME,
+      ${meta.groupName ? `${meta.alias}.${meta.groupName}` : 'CAST(NULL AS NVARCHAR(200))'} AS GROUP_NAME,
+      ${meta.numericValue ? `TRY_CONVERT(FLOAT, ${meta.alias}.${meta.numericValue})` : 'CAST(NULL AS FLOAT)'} AS NUMERIC_VALUE,
+      ${meta.rawValue ? `CAST(${meta.alias}.${meta.rawValue} AS NVARCHAR(100))` : 'CAST(NULL AS NVARCHAR(100))'} AS RAW_VALUE,
+      ${meta.alias}.${meta.patientCategory} AS PATIENT_CATEGORY,
+      ${meta.ageAtEvent ? `TRY_CONVERT(FLOAT, ${meta.alias}.${meta.ageAtEvent})` : 'CAST(NULL AS FLOAT)'} AS AGE_AT_EVENT
+    FROM ${meta.table} ${meta.alias}
+  `.trim()).join('\n    UNION ALL\n');
 
-  const from = indexWindow.from || condition.from;
-  const to = indexWindow.to || condition.to;
-  if (from && to) {
-    clauses.push(`${alias}.${meta.dateColumn} BETWEEN ${quote(from)} AND ${quote(to)}`);
-  } else if (from) {
-    clauses.push(`${alias}.${meta.dateColumn} >= ${quote(from)}`);
-  } else if (to) {
-    clauses.push(`${alias}.${meta.dateColumn} <= ${quote(to)}`);
-  }
+  return `AllEvents AS (
+    ${unions}
+)`;
+}
 
-  if (condition.domain === 'lab' && condition.value !== '' && condition.value !== undefined) {
-    clauses.push(`${alias}.${meta.valueColumn} ${sqlOperator(condition.operator || condition.labOperator)} ${Number(condition.value)}`);
-  }
+function buildIndexRuleCte(cteName, condition, indexWindow = {}) {
+  const clauses = [buildGroupSql(condition.filter, { allowedFields: FILTER_FIELDSETS.index })];
 
-  if (condition.domain === 'lab' && condition.labValue !== '' && condition.labValue !== undefined) {
-    clauses.push(`${alias}.${meta.valueColumn} ${sqlOperator(condition.labOperator)} ${Number(condition.labValue)}`);
+  if (indexWindow.from && indexWindow.to) {
+    clauses.push(`e.EVENT_DATE BETWEEN ${quote(indexWindow.from)} AND ${quote(indexWindow.to)}`);
+  } else if (indexWindow.from) {
+    clauses.push(`e.EVENT_DATE >= ${quote(indexWindow.from)}`);
+  } else if (indexWindow.to) {
+    clauses.push(`e.EVENT_DATE <= ${quote(indexWindow.to)}`);
   }
 
   return `${cteName} AS (
-    SELECT DISTINCT ${alias}.OH_PID, ${alias}.${meta.dateColumn} AS EVENT_DATE
-    FROM ${meta.table} ${alias}
+    SELECT DISTINCT e.OH_PID, e.EVENT_DATE
+    FROM AllEvents e
     WHERE ${clauses.join('\n      AND ')}
 )`;
 }
@@ -162,7 +217,7 @@ function buildIndexCohortCte(indexRefs) {
     ) i ON i.OH_PID = p.OH_PID
     WHERE ${logic}
     GROUP BY p.OH_PID
-)`;
+  )`;
 }
 
 function buildBasePatientsCte(demographics, hasIndexCohort) {
@@ -185,66 +240,144 @@ function buildBasePatientsCte(demographics, hasIndexCohort) {
     FROM Patient_Info p
     ${joins}
     ${clauses.length ? `WHERE ${clauses.join('\n      AND ')}` : ''}
-)`;
+  )`;
 }
 
 function buildFinalWhere(criterionRefs) {
-  return criterionRefs.map((ref, index) => {
-    const operator = index === 0 ? '' : `${ref.criterion.joiner || (ref.isExclusion ? 'OR' : 'AND')} `;
-    const exists = `${ref.isExclusion ? 'NOT ' : ''}EXISTS (
-    SELECT 1 FROM ${ref.cteName} c
-    WHERE c.OH_PID = p.OH_PID${timingClause(ref.criterion)}
-)`;
-    return `${operator}${exists}`;
-  });
+  const inclusions = criterionRefs.filter((ref) => !ref.isExclusion);
+  const exclusions = criterionRefs.filter((ref) => ref.isExclusion);
+  const clauses = [];
+
+  if (inclusions.length > 0) {
+    clauses.push(buildExistsExpression(inclusions));
+  }
+  if (exclusions.length > 0) {
+    clauses.push(`NOT ${buildExistsExpression(exclusions)}`);
+  }
+
+  return clauses;
 }
 
-function timingClause(criterion) {
-  const before = Number(criterion.daysBefore || 0);
-  const after = Number(criterion.daysAfter || 0);
-  if (criterion.timing === 'before') {
-    return `
-      AND c.EVENT_DATE BETWEEN DATEADD(DAY, -${before}, p.T0_DATE) AND p.T0_DATE`;
+function buildExistsExpression(refs) {
+  const combined = refs.map((ref, index) => {
+    const operator = index === 0 ? '' : ` ${(ref.criterion.joiner || 'AND').toUpperCase()} `;
+    return `${operator}EXISTS (
+      SELECT 1 FROM AllEvents e
+      WHERE e.OH_PID = p.OH_PID
+        AND ${buildGroupSql(ref.criterion.filter, { allowedFields: FILTER_FIELDSETS.criteria, patientAlias: 'p' })}
+    )`;
+  }).join('');
+
+  return `(${combined})`;
+}
+
+function buildGroupSql(group, options = {}) {
+  if (!group.children?.length) return '1 = 1';
+  const joiner = group.logic === 'OR' ? ' OR ' : ' AND ';
+  return `(${group.children.map((child) => (
+    child.type === 'group'
+      ? buildGroupSql(child, options)
+      : buildConditionSql(child, options)
+  )).join(joiner)})`;
+}
+
+function buildConditionSql(condition, options = {}) {
+  const field = FILTER_FIELDS[condition.field];
+  const expression = FIELD_SQL[condition.field]({
+    eventAlias: options.eventAlias || 'e',
+    patientAlias: options.patientAlias || 'p'
+  });
+  if (field.type === 'text') return textConditionSql(expression, condition.operator, condition.value);
+  if (field.type === 'number') return numberConditionSql(expression, condition.operator, condition.value);
+  if (field.type === 'date') return dateConditionSql(expression, condition.operator, condition.value);
+  return selectConditionSql(expression, condition.operator, condition.value);
+}
+
+function textConditionSql(expression, operator, value) {
+  const cast = `COALESCE(CAST(${expression} AS NVARCHAR(MAX)), '')`;
+  if (operator === 'contains') return `${cast} LIKE ${quote(`%${escapeLike(value)}%`)}`;
+  if (operator === 'does_not_contain') return `${cast} NOT LIKE ${quote(`%${escapeLike(value)}%`)}`;
+  if (operator === 'is') return `${cast} = ${quote(value)}`;
+  if (operator === 'is_not') return `${cast} <> ${quote(value)}`;
+  if (operator === 'is_empty') return `LTRIM(RTRIM(${cast})) = ''`;
+  if (operator === 'is_not_empty') return `LTRIM(RTRIM(${cast})) <> ''`;
+  if (operator === 'starts_with') return `${cast} LIKE ${quote(`${escapeLike(value)}%`)}`;
+  if (operator === 'ends_with') return `${cast} LIKE ${quote(`%${escapeLike(value)}`)}`;
+  return '1 = 0';
+}
+
+function numberConditionSql(expression, operator, value) {
+  if (operator === 'is_empty') return `${expression} IS NULL`;
+  if (operator === 'between') {
+    const clauses = [];
+    if (value?.from !== '') clauses.push(`${expression} >= ${Number(value.from)}`);
+    if (value?.to !== '') clauses.push(`${expression} <= ${Number(value.to)}`);
+    return clauses.length > 0 ? `(${clauses.join(' AND ')})` : '1 = 0';
   }
-  if (criterion.timing === 'after') {
-    return `
-      AND c.EVENT_DATE BETWEEN p.T0_DATE AND DATEADD(DAY, ${after}, p.T0_DATE)`;
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return '1 = 0';
+  if (operator === 'is') return `${expression} = ${numeric}`;
+  if (operator === 'is_not') return `${expression} <> ${numeric}`;
+  if (operator === 'greater_than') return `${expression} > ${numeric}`;
+  if (operator === 'less_than') return `${expression} < ${numeric}`;
+  if (operator === 'greater_than_or_equal') return `${expression} >= ${numeric}`;
+  if (operator === 'less_than_or_equal') return `${expression} <= ${numeric}`;
+  return '1 = 0';
+}
+
+function dateConditionSql(expression, operator, value) {
+  const cast = `CAST(${expression} AS DATE)`;
+  if (operator === 'today') return `${cast} = CAST(GETDATE() AS DATE)`;
+  if (operator === 'this_month') {
+    return `YEAR(${cast}) = YEAR(GETDATE()) AND MONTH(${cast}) = MONTH(GETDATE())`;
   }
-  if (criterion.timing === 'within') {
-    return `
-      AND c.EVENT_DATE BETWEEN DATEADD(DAY, -${before}, p.T0_DATE) AND DATEADD(DAY, ${after}, p.T0_DATE)`;
+  if (operator === 'between') {
+    const clauses = [];
+    if (value?.from) clauses.push(`${cast} >= ${quote(value.from)}`);
+    if (value?.to) clauses.push(`${cast} <= ${quote(value.to)}`);
+    return clauses.length > 0 ? `(${clauses.join(' AND ')})` : '1 = 0';
   }
-  return '';
+  if (!value) return '1 = 0';
+  if (operator === 'exact_date') return `${cast} = ${quote(value)}`;
+  if (operator === 'before') return `${cast} < ${quote(value)}`;
+  if (operator === 'after') return `${cast} > ${quote(value)}`;
+  if (operator === 'on_or_before') return `${cast} <= ${quote(value)}`;
+  if (operator === 'on_or_after') return `${cast} >= ${quote(value)}`;
+  return '1 = 0';
+}
+
+function selectConditionSql(expression, operator, value) {
+  const cast = `COALESCE(CAST(${expression} AS NVARCHAR(100)), '')`;
+  if (operator === 'is_empty') return `LTRIM(RTRIM(${cast})) = ''`;
+  if (operator === 'is') return `${cast} = ${quote(value)}`;
+  if (operator === 'is_not') return `${cast} <> ${quote(value)}`;
+  if (operator === 'is_any_of') return `${cast} IN (${sqlList(value || [])})`;
+  if (operator === 'is_none_of') return `${cast} NOT IN (${sqlList(value || [])})`;
+  return '1 = 0';
 }
 
 function buildSummary(config) {
-  const all = [...config.indexEvents, ...config.inclusionCriteria, ...config.exclusionCriteria];
-  const counts = {
-    diagnosis: countConcepts(all, 'diagnosis'),
-    lab: countConcepts(all, 'lab'),
-    drug: countConcepts(all, 'drug')
-  };
-  const age = [];
-  if (config.demographics.minAge !== '' && config.demographics.minAge !== undefined) age.push(`Age >= ${config.demographics.minAge}`);
-  if (config.demographics.maxAge !== '' && config.demographics.maxAge !== undefined) age.push(`Age <= ${config.demographics.maxAge}`);
-  if (config.demographics.sex && config.demographics.sex !== 'Any') age.push(`Sex = ${config.demographics.sex}`);
-
   const parts = [];
-  if (counts.diagnosis) parts.push(`${counts.diagnosis} diagnosis`);
-  if (counts.lab) parts.push(`${counts.lab} lab`);
-  if (counts.drug) parts.push(`${counts.drug} drug`);
-  parts.push(...age);
+  if (config.indexEvents.length) parts.push(`${config.indexEvents.length} T0 rule${config.indexEvents.length === 1 ? '' : 's'}`);
+  if (config.inclusionCriteria.length) parts.push(`${config.inclusionCriteria.length} inclusion rule${config.inclusionCriteria.length === 1 ? '' : 's'}`);
+  if (config.exclusionCriteria.length) parts.push(`${config.exclusionCriteria.length} exclusion rule${config.exclusionCriteria.length === 1 ? '' : 's'}`);
+
+  const highlighted = summarizeValues(config);
+  if (highlighted.length > 0) parts.push(highlighted.slice(0, 4).join(', '));
+
+  if (config.demographics.minAge !== '' && config.demographics.minAge !== undefined) parts.push(`Age >= ${config.demographics.minAge}`);
+  if (config.demographics.maxAge !== '' && config.demographics.maxAge !== undefined) parts.push(`Age <= ${config.demographics.maxAge}`);
+  if (config.demographics.sex && config.demographics.sex !== 'Any') parts.push(`Sex = ${config.demographics.sex}`);
+
   return `Criteria: ${parts.length ? parts.join(' · ') : 'no selected criteria'}`;
 }
 
-function countConcepts(rows, domain) {
-  return rows
-    .filter((row) => row.domain === domain)
-    .reduce((sum, row) => sum + (row.concepts?.length || 0), 0);
-}
-
-function hasConcepts(condition) {
-  return Boolean(condition?.domain && DOMAIN_META[condition.domain] && condition.concepts?.length);
+function summarizeValues(config) {
+  return [
+    ...config.indexEvents.flatMap((rule) => conditionValuesFromTree(rule.filter)),
+    ...config.inclusionCriteria.flatMap((rule) => conditionValuesFromTree(rule.filter)),
+    ...config.exclusionCriteria.flatMap((rule) => conditionValuesFromTree(rule.filter))
+  ].map((item) => item.value);
 }
 
 function quote(value) {
@@ -255,6 +388,10 @@ function sqlList(values) {
   return values.map(quote).join(', ');
 }
 
-function sqlOperator(operator) {
-  return ['>', '>=', '<', '<=', '='].includes(operator) ? operator : '=';
+function escapeLike(value) {
+  return String(value).replaceAll('[', '[[]').replaceAll('%', '[%]').replaceAll('_', '[_]');
+}
+
+function joinWhereClauses(clauses) {
+  return clauses.join('\nAND ');
 }

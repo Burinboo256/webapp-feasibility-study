@@ -1,6 +1,16 @@
+import {
+  FILTER_FIELDSETS,
+  createCondition,
+  createConditionGroup,
+  evaluateConditionGroup,
+  isConditionGroupActive,
+  normalizeRule
+} from './advancedConditions.js';
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export function evaluateCohort(config, data) {
+  const normalizedConfig = normalizeCohortConfig(config);
   const patients = data.patient_master || [];
   const indexes = buildIndexes(data);
   const rows = [];
@@ -8,7 +18,7 @@ export function evaluateCohort(config, data) {
 
   for (const patient of patients) {
     const patientEvents = getPatientEvents(patient.hn, indexes);
-    const indexMatch = findIndexMatch(config, patientEvents);
+    const indexMatch = findIndexMatch(normalizedConfig, patientEvents);
     const indexEvent = indexMatch?.indexEvent || null;
 
     if (!indexEvent) {
@@ -22,19 +32,21 @@ export function evaluateCohort(config, data) {
       continue;
     }
 
-    const context = {
-      patient,
-      indexEvent,
-      patientEvents,
-      ageAtIndex: deriveAgeAtIndex(indexEvent, patientEvents)
-    };
-    const demographicReasons = evaluateDemographics(config.demographics, context);
-    const inclusionReasons = evaluateCriteria(config.inclusionCriteria || [], context, 'inclusion');
-    const exclusionReasons = evaluateCriteria(config.exclusionCriteria || [], context, 'exclusion');
+    const context = buildContext({ patient, indexEvent, patientEvents });
+    const demographicReasons = evaluateDemographics(normalizedConfig.demographics, context);
+    const inclusionReasons = evaluateCriteria(normalizedConfig.inclusionCriteria, context, 'inclusion');
+    const exclusionReasons = evaluateCriteria(normalizedConfig.exclusionCriteria, context, 'exclusion');
     const reasons = [...demographicReasons, ...inclusionReasons, ...exclusionReasons];
     const status = reasons.length === 0 ? 'Included' : reasons[0];
 
-    rows.push({ patient, status, indexEvent, indexMatches: indexMatch.matches, reasons, ageAtIndex: context.ageAtIndex });
+    rows.push({
+      patient,
+      status,
+      indexEvent,
+      indexMatches: indexMatch.matches,
+      reasons,
+      ageAtIndex: context.ageAtIndex
+    });
   }
 
   const indexEligibleRows = rows.filter((row) => row.indexEvent);
@@ -46,11 +58,11 @@ export function evaluateCohort(config, data) {
   attrition.push({ label: 'After demographic filters', count: running.length, removed: demographicExcluded.length });
 
   const beforeInclusion = running.length;
-  running = running.filter((row) => evaluateCriterionExpression(config.inclusionCriteria || [], rowToContext(row, indexes), 'AND'));
+  running = running.filter((row) => evaluateCriterionExpression(normalizedConfig.inclusionCriteria, rowToContext(row, indexes), 'AND'));
   attrition.push({ label: 'After inclusion condition logic', count: running.length, removed: beforeInclusion - running.length });
 
   const beforeExclusion = running.length;
-  running = running.filter((row) => !evaluateCriterionExpression(config.exclusionCriteria || [], rowToContext(row, indexes), 'OR'));
+  running = running.filter((row) => !evaluateCriterionExpression(normalizedConfig.exclusionCriteria, rowToContext(row, indexes), 'OR'));
   attrition.push({ label: 'After exclusion condition logic', count: running.length, removed: beforeExclusion - running.length });
 
   const included = rows.filter((row) => row.status === 'Included');
@@ -75,11 +87,7 @@ export function defaultConfig() {
         id: 'idx-blank',
         label: '',
         joiner: 'AND',
-        domain: 'diagnosis',
-        query: '',
-        concepts: [],
-        labOperator: '>=',
-        labValue: ''
+        filter: createConditionGroup()
       }
     ],
     indexWindow: {
@@ -103,15 +111,11 @@ export function diabetesPresetConfig() {
       {
         id: 'idx-diabetes',
         label: 'Diabetes diagnosis at T0',
-        domain: 'diagnosis',
-        query: 'E11',
-        concepts: [
-          { code: 'E11.9', name: 'Type 2 diabetes mellitus without complications' },
-          { code: 'E11.65', name: 'Type 2 diabetes mellitus with hyperglycemia' },
-          { code: 'E11.22', name: 'Type 2 diabetes mellitus with diabetic chronic kidney disease' }
-        ],
-        labOperator: '>=',
-        labValue: ''
+        joiner: 'AND',
+        filter: ruleFilter([
+          equals('domain', 'diagnosis'),
+          anyOf('code', ['E11.9', 'E11.65', 'E11.22'])
+        ])
       }
     ],
     indexWindow: {
@@ -126,49 +130,48 @@ export function diabetesPresetConfig() {
     inclusionCriteria: [
       {
         id: 'inc-lab-a1c',
-        domain: 'lab',
         label: 'HbA1c result within 180 days after T0',
-        operator: 'any',
-        query: 'HbA1c',
-        concepts: [
-          { code: 'HBA1C', name: 'HbA1c' }
-        ],
-        timing: 'after',
-        daysBefore: 0,
-        daysAfter: 180,
-        value: ''
+        joiner: 'AND',
+        filter: ruleFilter([
+          equals('domain', 'lab'),
+          equals('code', 'HBA1C'),
+          range('daysFromT0', '0', '180')
+        ])
       },
       {
         id: 'inc-drug-metformin',
-        domain: 'drug',
         label: 'Metformin released within 90 days after T0',
-        operator: 'any',
-        query: 'metformin',
-        concepts: [
-          { code: 'MET500', name: 'Metformin 500 mg tablet' }
-        ],
-        timing: 'after',
-        daysBefore: 0,
-        daysAfter: 90,
-        value: ''
+        joiner: 'AND',
+        filter: ruleFilter([
+          equals('domain', 'drug'),
+          equals('code', 'MET500'),
+          range('daysFromT0', '0', '90')
+        ])
       }
     ],
     exclusionCriteria: [
       {
         id: 'exc-ckd',
-        domain: 'diagnosis',
         label: 'Exclude chronic kidney disease before T0',
-        operator: 'any',
-        query: 'N18',
-        concepts: [
-          { code: 'N18.3', name: 'Chronic kidney disease stage 3' }
-        ],
-        timing: 'before',
-        daysBefore: 365,
-        daysAfter: 0,
-        value: ''
+        joiner: 'OR',
+        filter: ruleFilter([
+          equals('domain', 'diagnosis'),
+          equals('code', 'N18.3'),
+          range('daysFromT0', '-365', '0')
+        ])
       }
     ]
+  };
+}
+
+export function normalizeCohortConfig(config = {}) {
+  return {
+    question: config.question || '',
+    indexEvents: normalizeRules(config.indexEvents || (config.indexEvent ? [config.indexEvent] : []), FILTER_FIELDSETS.index, 'index', 'AND'),
+    indexWindow: config.indexWindow || {},
+    demographics: config.demographics || {},
+    inclusionCriteria: normalizeRules(config.inclusionCriteria || [], FILTER_FIELDSETS.criteria, 'criteria', 'AND'),
+    exclusionCriteria: normalizeRules(config.exclusionCriteria || [], FILTER_FIELDSETS.criteria, 'criteria', 'OR')
   };
 }
 
@@ -179,6 +182,7 @@ export function buildIndexes(data) {
     eventDate: row.service_date,
     code: row.icd_code,
     name: row.disease_name,
+    patientCategory: row.patient_category,
     age: Number(row.age_at_visit)
   })));
   const drug = groupByHn((data.prescription_order || []).map((row) => ({
@@ -187,7 +191,9 @@ export function buildIndexes(data) {
     eventDate: row.order_date,
     code: row.drug_code,
     name: row.drug_name,
-    groupName: row.drug_group_name
+    groupName: row.drug_group_name,
+    patientCategory: row.service_type,
+    numericValue: parseNumeric(row.quantity)
   })));
   const lab = groupByHn((data.lab_result || []).map((row) => ({
     ...row,
@@ -197,6 +203,8 @@ export function buildIndexes(data) {
     name: row.test_name,
     groupName: row.test_group_name,
     numericValue: parseNumeric(row.result_value),
+    rawValue: row.result_value,
+    patientCategory: row.patient_category,
     unit: row.result_unit,
     age: Number(row.age_at_test)
   })));
@@ -205,20 +213,23 @@ export function buildIndexes(data) {
 }
 
 export function criterionMatches(criterion, context) {
-  const events = context.patientEvents[criterion.domain] || [];
-  return events.some((event) => eventMatchesCriterion(event, criterion, context.indexEvent.eventDate));
+  return context.filterEvents.some((event) => evaluateConditionGroup(criterion.filter, event, { allowedFields: FILTER_FIELDSETS.criteria }));
+}
+
+function normalizeRules(rules, allowedFields, legacyMode, defaultJoiner) {
+  return rules
+    .map((rule) => normalizeRule(rule, { allowedFields, legacyMode, defaultJoiner }))
+    .filter((rule) => isConditionGroupActive(rule.filter));
 }
 
 function findIndexMatch(config, patientEvents) {
-  const indexConfigs = normalizeIndexEvents(config);
-  const matches = [];
+  const matches = config.indexEvents.map((indexConfig) => ({
+    config: indexConfig,
+    event: findIndexEvent(indexConfig, patientEvents, config.indexWindow)
+  }));
 
-  for (const indexConfig of indexConfigs) {
-    const match = findIndexEvent(indexConfig, patientEvents, config.indexWindow);
-    matches.push({ config: indexConfig, event: match });
-  }
-
-  if (!evaluateBooleanExpression(matches.map((match) => Boolean(match.event)), indexConfigs, 'AND')) return null;
+  if (matches.length === 0) return null;
+  if (!evaluateBooleanExpression(matches.map((match) => Boolean(match.event)), config.indexEvents, 'AND')) return null;
 
   return {
     indexEvent: matches.find((match) => match.event)?.event || null,
@@ -226,49 +237,28 @@ function findIndexMatch(config, patientEvents) {
   };
 }
 
-function normalizeIndexEvents(config) {
-  if (Array.isArray(config.indexEvents) && config.indexEvents.length > 0) return config.indexEvents;
-  if (config.indexEvent) return [config.indexEvent];
-  return [];
-}
-
 function rowToContext(row, indexes) {
   const patientEvents = getPatientEvents(row.patient.hn, indexes);
-  return {
+  return buildContext({
     patient: row.patient,
     indexEvent: row.indexEvent,
     patientEvents,
     ageAtIndex: row.ageAtIndex
-  };
+  });
 }
 
-function buildEventMatcher(query, labOperator, labValue, concepts = []) {
-  return (event) => {
-    if (!matchesConceptOrText(event, concepts, query)) return false;
-    if (event.domain !== 'lab' || labValue === '' || labValue === null || labValue === undefined) return true;
-    return compareNumeric(event.numericValue, labOperator, Number(labValue));
+function buildContext({ patient, indexEvent, patientEvents, ageAtIndex }) {
+  return {
+    patient,
+    indexEvent,
+    patientEvents,
+    filterEvents: normalizePatientEvents(patientEvents, indexEvent?.eventDate || null),
+    ageAtIndex: ageAtIndex ?? deriveAgeAtIndex(indexEvent, patientEvents)
   };
-}
-
-function compareNumeric(actual, operator, expected) {
-  if (!Number.isFinite(actual) || !Number.isFinite(expected)) return false;
-  switch (operator) {
-    case '>':
-      return actual > expected;
-    case '>=':
-      return actual >= expected;
-    case '<':
-      return actual < expected;
-    case '<=':
-      return actual <= expected;
-    case '=':
-      return actual === expected;
-    default:
-      return true;
-  }
 }
 
 function deriveAgeAtIndex(indexEvent, patientEvents) {
+  if (!indexEvent) return null;
   if (Number.isFinite(indexEvent.age)) return indexEvent.age;
   const datedEvents = [...patientEvents.diagnosis, ...patientEvents.lab]
     .filter((event) => Number.isFinite(event.age))
@@ -320,18 +310,35 @@ function evaluateDemographics(demographics = {}, context) {
   return reasons;
 }
 
-function eventMatchesCriterion(event, criterion, indexDate) {
-  if (!buildEventMatcher(criterion.query, criterion.operator, criterion.value, criterion.concepts)(event)) return false;
-  return isInsideWindow(event.eventDate, indexDate, criterion);
-}
-
 function findIndexEvent(indexConfig, patientEvents, indexWindow = {}) {
-  const events = patientEvents[indexConfig.domain] || [];
-  const matcher = buildEventMatcher(indexConfig.query, indexConfig.labOperator, indexConfig.labValue, indexConfig.concepts);
-  return events
-    .filter((event) => matcher(event))
+  return normalizePatientEvents(patientEvents, null)
+    .filter((event) => evaluateConditionGroup(indexConfig.filter, event, { allowedFields: FILTER_FIELDSETS.index }))
     .filter((event) => isInsideAbsoluteWindow(event.eventDate, indexWindow))
     .sort((a, b) => new Date(a.eventDate) - new Date(b.eventDate))[0] || null;
+}
+
+function normalizePatientEvents(patientEvents, indexDate) {
+  return [
+    ...normalizeDomainEvents(patientEvents.diagnosis || [], indexDate),
+    ...normalizeDomainEvents(patientEvents.lab || [], indexDate),
+    ...normalizeDomainEvents(patientEvents.drug || [], indexDate)
+  ];
+}
+
+function normalizeDomainEvents(events, indexDate) {
+  return events.map((event) => ({
+    ...event,
+    domain: event.domain,
+    code: event.code || '',
+    name: event.name || '',
+    groupName: event.groupName || '',
+    eventDate: event.eventDate,
+    numericValue: Number.isFinite(event.numericValue) ? event.numericValue : null,
+    rawValue: event.rawValue || '',
+    patientCategory: event.patientCategory || '',
+    ageAtEvent: Number.isFinite(event.age) ? event.age : null,
+    daysFromT0: indexDate ? daysBetween(event.eventDate, indexDate) : null
+  }));
 }
 
 function getPatientEvents(hn, indexes) {
@@ -358,48 +365,6 @@ function isInsideAbsoluteWindow(eventDate, window) {
   if (window.from && new Date(eventDate) < new Date(window.from)) return false;
   if (window.to && new Date(eventDate) > new Date(window.to)) return false;
   return true;
-}
-
-function isInsideWindow(eventDate, indexDate, criterion) {
-  const delta = daysBetween(eventDate, indexDate);
-  const before = numberOrNull(criterion.daysBefore) ?? 0;
-  const after = numberOrNull(criterion.daysAfter) ?? 0;
-
-  if (criterion.timing === 'before') return delta <= 0 && Math.abs(delta) <= before;
-  if (criterion.timing === 'after') return delta >= 0 && delta <= after;
-  if (criterion.timing === 'within') return delta >= -before && delta <= after;
-  return true;
-}
-
-function matchesText(event, query = '') {
-  const normalized = query.trim().toLowerCase();
-  if (!normalized) return true;
-  const haystack = [event.code, event.name, event.groupName, event.icd_version, event.patient_category]
-    .filter(Boolean)
-    .join(' ')
-    .toLowerCase();
-  return normalized.split(/\s+/).every((part) => haystack.includes(part));
-}
-
-function matchesConceptOrText(event, concepts = [], query = '') {
-  if (Array.isArray(concepts) && concepts.length > 0) {
-    return concepts.some((concept) => matchesConcept(event, concept));
-  }
-  if (!query.trim()) return false;
-  return matchesText(event, query);
-}
-
-function matchesConcept(event, concept) {
-  const code = typeof concept === 'string' ? concept : concept.code;
-  const name = typeof concept === 'string' ? '' : concept.name;
-  const eventCode = String(event.code || '').toLowerCase();
-  const eventName = String(event.name || '').toLowerCase();
-  const conceptCode = String(code || '').toLowerCase();
-  const conceptName = String(name || '').toLowerCase();
-
-  if (conceptCode && eventCode === conceptCode) return true;
-  if (conceptName && eventName === conceptName) return true;
-  return false;
 }
 
 function summarizeConcepts(included, indexes) {
@@ -444,6 +409,25 @@ function numberOrNull(value) {
 }
 
 function parseNumeric(value) {
-  const number = Number.parseFloat(String(value).replace(/[^0-9.-]/g, ''));
+  const number = Number.parseFloat(String(value ?? '').replace(/[^0-9.-]/g, ''));
   return Number.isFinite(number) ? number : null;
+}
+
+function ruleFilter(children) {
+  return createConditionGroup({ logic: 'AND', children });
+}
+
+function equals(field, value) {
+  return createCondition({ field, operator: 'is', value });
+}
+
+function anyOf(field, values) {
+  return createConditionGroup({
+    logic: 'OR',
+    children: values.map((value) => createCondition({ field, operator: 'is', value }))
+  });
+}
+
+function range(field, from, to) {
+  return createCondition({ field, operator: 'between', value: { from, to } });
 }

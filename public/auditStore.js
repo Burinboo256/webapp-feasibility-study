@@ -1,3 +1,5 @@
+import { conditionValuesFromTree, normalizeRule } from '../src/advancedConditions.js';
+
 export const AUDIT_USER_KEY = 'cohort-lens.auditUser.v1';
 
 export async function getCurrentSession() {
@@ -124,8 +126,16 @@ export function collectSelectedConcepts(config) {
   };
 
   for (const source of cohortConceptSources(config)) {
+    const normalized = normalizeRule(source, {
+      allowedFields: source.section === 'T0'
+        ? ['domain', 'code', 'name', 'groupName', 'eventDate', 'numericValue', 'rawValue', 'patientCategory', 'ageAtEvent']
+        : ['domain', 'code', 'name', 'groupName', 'eventDate', 'numericValue', 'rawValue', 'patientCategory', 'ageAtEvent', 'daysFromT0'],
+      legacyMode: source.section === 'T0' ? 'index' : 'criteria',
+      defaultJoiner: source.section === 'Exclusion' ? 'OR' : 'AND'
+    });
+    const values = conditionValuesFromTree(normalized.filter);
+    const domain = extractDomain(normalized.filter) || source.domain || 'diagnosis';
     for (const concept of source.concepts || []) {
-      const domain = source.domain || 'diagnosis';
       if (!summary[domain]) summary[domain] = [];
       const key = `${source.section}|${concept.code || ''}|${concept.name || ''}`;
       if (summary[domain].some((item) => item.key === key)) continue;
@@ -134,6 +144,17 @@ export function collectSelectedConcepts(config) {
         section: source.section,
         code: concept.code || '',
         name: concept.name || ''
+      });
+    }
+    for (const value of values) {
+      if (!summary[domain]) summary[domain] = [];
+      const key = `${source.section}|${value.field}|${value.value}`;
+      if (summary[domain].some((item) => item.key === key)) continue;
+      summary[domain].push({
+        key,
+        section: source.section,
+        code: value.field === 'code' ? value.value : '',
+        name: value.field === 'name' ? value.value : value.value
       });
     }
   }
@@ -147,4 +168,17 @@ function cohortConceptSources(config) {
     ...(config.inclusionCriteria || []).map((item) => ({ ...item, section: 'Inclusion' })),
     ...(config.exclusionCriteria || []).map((item) => ({ ...item, section: 'Exclusion' }))
   ];
+}
+
+function extractDomain(group) {
+  for (const child of group?.children || []) {
+    if (child.type === 'condition' && child.field === 'domain' && child.operator === 'is') {
+      return child.value;
+    }
+    if (child.type === 'group') {
+      const domain = extractDomain(child);
+      if (domain) return domain;
+    }
+  }
+  return '';
 }

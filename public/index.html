@@ -11,6 +11,7 @@
       <nav class="topbar" aria-label="Application">
         <a class="brand" href="/">Cohort Lens</a>
         <div class="nav-actions">
+          <a class="nav-link" href="/dictionary.html">Master dictionary</a>
           <a class="nav-link" href="/logs.html">Session logs</a>
           <div id="authStatus" class="auth-status"></div>
           <span class="pill">Synthetic data only</span>
@@ -86,7 +87,7 @@
               <legend>T0 index event conditions</legend>
               <button id="addIndexCondition" type="button" class="small">Add T0 condition</button>
             </div>
-            <p class="helper-text">Use AND/OR to combine T0 conditions. The first matching condition sets the cohort entry date used for before/after timing.</p>
+            <p class="helper-text">Use nested groups to describe the qualifying T0 event. The first matching T0 rule in list order sets the cohort entry date used by inclusion and exclusion timing. Look up diagnosis, lab, and drug codes in the <a href="/dictionary.html">master dictionary</a>.</p>
             <div id="indexConditionList" class="criteria-list"></div>
             <div class="form-grid">
               <label class="field">
@@ -126,15 +127,17 @@
             <div class="card">
               <div class="card-title">
                 <legend>Inclusion criteria</legend>
-                <button id="addInclusion" type="button" class="small">Add</button>
+                <button id="addInclusion" type="button" class="small">Add condition</button>
               </div>
+              <p class="helper-text">For timing relative to T0, use the <code>Days from T0</code> field. Negative values are before T0 and positive values are after T0.</p>
               <div id="inclusionList" class="criteria-list"></div>
             </div>
             <div class="card">
               <div class="card-title">
                 <legend>Exclusion criteria</legend>
-                <button id="addExclusion" type="button" class="small">Add</button>
+                <button id="addExclusion" type="button" class="small">Add condition</button>
               </div>
+              <p class="helper-text">Exclusion rules run after inclusion logic. Use OR between rules when any one matching event should exclude the patient.</p>
               <div id="exclusionList" class="criteria-list"></div>
             </div>
           </section>
@@ -184,107 +187,20 @@
       Development dataset is synthetic and schema-aligned. Use de-identified data and governance review before connecting real clinical sources.
     </footer>
 
-    <template id="criterionTemplate">
-      <article class="criterion">
+    <template id="ruleTemplate">
+      <article class="criterion advanced-rule">
         <div class="criterion-top">
-          <select data-field="domain" aria-label="Criterion domain">
-            <option value="diagnosis">Diagnosis/comorbidity</option>
-            <option value="lab">Lab</option>
-            <option value="drug">Drug release</option>
-          </select>
           <select data-field="joiner" aria-label="Combine condition with previous">
             <option value="AND">AND</option>
             <option value="OR">OR</option>
           </select>
-          <button type="button" class="remove" aria-label="Remove criterion">Remove</button>
+          <button type="button" class="remove" aria-label="Delete rule">Delete rule</button>
         </div>
         <label class="field compact">
           <span>Label</span>
-          <input data-field="label" type="text" placeholder="Hypertension before T0">
+          <input data-field="label" type="text" placeholder="Optional label for this rule">
         </label>
-        <div class="criterion-grid">
-          <label class="field compact">
-            <span>Code/name concepts</span>
-            <select class="concept-select-hidden" data-field="concepts" multiple></select>
-            <div class="concept-picker" data-field="conceptPicker"></div>
-          </label>
-          <div class="concept-preview" data-field="conceptPreview" aria-live="polite"></div>
-          <label class="field compact">
-            <span>Operator</span>
-            <select data-field="operator">
-              <option value="any">Any result</option>
-              <option value=">=">&gt;=</option>
-              <option value=">">&gt;</option>
-              <option value="<=">&lt;=</option>
-              <option value="<">&lt;</option>
-              <option value="=">=</option>
-            </select>
-          </label>
-          <label class="field compact">
-            <span>Value</span>
-            <input data-field="value" type="number" step="0.1" placeholder="Optional">
-          </label>
-          <label class="field compact">
-            <span>Timing vs T0</span>
-            <select data-field="timing">
-              <option value="within">Within window</option>
-              <option value="before">Before T0</option>
-              <option value="after">After T0</option>
-              <option value="any">Any time</option>
-            </select>
-          </label>
-          <label class="field compact">
-            <span>Days before</span>
-            <input data-field="daysBefore" type="number" min="0" value="365">
-          </label>
-          <label class="field compact">
-            <span>Days after</span>
-            <input data-field="daysAfter" type="number" min="0" value="365">
-          </label>
-        </div>
-      </article>
-    </template>
-
-    <template id="indexConditionTemplate">
-      <article class="criterion index-condition">
-        <div class="criterion-top">
-          <select data-field="domain" aria-label="T0 condition domain">
-            <option value="diagnosis">Diagnosis</option>
-            <option value="lab">Lab</option>
-            <option value="drug">Drug release</option>
-          </select>
-          <select data-field="joiner" aria-label="Combine T0 condition with previous">
-            <option value="AND">AND</option>
-            <option value="OR">OR</option>
-          </select>
-          <button type="button" class="remove" aria-label="Remove T0 condition">Remove</button>
-        </div>
-        <label class="field compact">
-          <span>Label</span>
-          <input data-field="label" type="text" placeholder="Diabetes diagnosis at T0">
-        </label>
-        <div class="criterion-grid">
-          <label class="field compact">
-            <span>Code/name concepts</span>
-            <select class="concept-select-hidden" data-field="concepts" multiple></select>
-            <div class="concept-picker" data-field="conceptPicker"></div>
-          </label>
-          <label class="field compact lab-only-condition">
-            <span>Lab operator</span>
-            <select data-field="labOperator">
-              <option value=">=">&gt;=</option>
-              <option value=">">&gt;</option>
-              <option value="<=">&lt;=</option>
-              <option value="<">&lt;</option>
-              <option value="=">=</option>
-            </select>
-          </label>
-          <label class="field compact lab-only-condition">
-            <span>Lab value</span>
-            <input data-field="labValue" type="number" step="0.1" placeholder="7.0">
-          </label>
-        </div>
-        <div class="concept-preview" data-field="conceptPreview" aria-live="polite"></div>
+        <div data-field="filterBuilder"></div>
       </article>
     </template>
 

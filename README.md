@@ -1,14 +1,15 @@
 # Diagnosis Feasibility Study Webapp
 
-Static prototype for cohort feasibility research. It uses synthetic clinical data generated from `data_dictionary.md` and supports ATLAS/OHDSI-style index events plus i2b2-style inclusion and exclusion panels.
+Node.js prototype for cohort feasibility research. It uses synthetic clinical data generated from `data_dictionary.md`, supports ATLAS/OHDSI-style index events plus i2b2-style inclusion and exclusion panels, and now includes a reusable Airtable-style nested condition builder with a separate diagnosis/lab/drug master dictionary page.
 
 Repository: https://github.com/Burinboo256/webapp-feasibility-study
 
 ## Commands
 
-- `npm install` installs runtime dependencies.
-- `npm run dev` starts a local static server at `http://localhost:4173`.
-- `npm test` runs the cohort feasibility engine tests.
+- `pnpm install` installs runtime dependencies.
+- `pnpm dev` starts a local static server at `http://localhost:4173`.
+- `pnpm test` runs the cohort feasibility engine tests.
+- `pnpm sync-dictionary` refreshes the local master dictionary snapshot from the configured Google Sheets.
 - `node scripts/hash-password.mjs "new-password"` generates a bcrypt hash for your local `data/users.json`.
 
 ## Local Setup
@@ -17,7 +18,7 @@ Repository: https://github.com/Burinboo256/webapp-feasibility-study
 2. Install dependencies:
 
 ```bash
-npm install
+pnpm install
 ```
 
 3. Create local config and credential files from the checked-in examples:
@@ -41,7 +42,7 @@ cp public/data/synthetic-clinical-data_example.json public/data/synthetic-clinic
 5. Start the app:
 
 ```bash
-npm run dev
+pnpm dev
 ```
 
 6. Open `http://127.0.0.1:4173`.
@@ -94,9 +95,9 @@ Environment variables are still supported as overrides when needed for deploymen
 
 ## Login And Audit Identity
 
-The app requires login before using the cohort builder or logs page. Login identity is included in feasibility run audit records.
+The app requires login before using the cohort builder, master dictionary, or logs page. Login identity is included in feasibility run audit records.
 
-Development sessions are stored in server memory. Restarting `npm run dev` clears active login sessions and users must sign in again.
+Development sessions are stored in server memory. Restarting `pnpm dev` clears active login sessions and users must sign in again.
 
 Credentials provider:
 
@@ -122,7 +123,7 @@ Google OAuth provider:
 Example:
 
 ```bash
-npm run dev
+pnpm dev
 ```
 
 ## Cloud Deployment Setup
@@ -132,8 +133,8 @@ This app now needs the Node server in `scripts/dev-server.mjs`; do not deploy it
 Typical cloud setup:
 
 1. Deploy the repository to a Node-capable host such as Render, Railway, Fly.io, Azure App Service, AWS Elastic Beanstalk, a VM, or an internal hospital server.
-2. Run `npm install` during build.
-3. Start with `npm run dev` or `node scripts/dev-server.mjs`.
+2. Run `pnpm install` during build.
+3. Start with `pnpm dev` or `node scripts/dev-server.mjs`.
 4. Create `config/app.config.json` from `config/app.config.example.json`, then update the local file for the target environment.
 5. Override `HOST` or `PORT` only when the platform injects them dynamically.
 6. Configure Google OAuth redirect URL to match the public app URL.
@@ -143,7 +144,7 @@ Typical cloud setup:
 Example cloud start command:
 
 ```bash
-HOST=0.0.0.0 PORT=4173 npm run dev
+HOST=0.0.0.0 PORT=4173 pnpm dev
 ```
 
 Example production-style config values:
@@ -189,7 +190,7 @@ config/app.config.json -> sqlServer.options.trustServerCertificate
 
 Notes:
 
-- `clinicalDataSource` controls where cohort feasibility counts and concept catalog data come from.
+- `clinicalDataSource` controls where cohort feasibility counts and cohort execution data come from.
 - `appStorage` controls where app users, sessions, pending OTPs, saved cohorts, and audit logs live.
 - Demolocal : `clinicalDataSource: "json"` and `appStorage: "local"` are the default checked-in values.
 - Production-like : `clinicalDataSource: "sqlserver"` or `appStorage: "sqlserver"` requires the SQL Server driver `mssql`.
@@ -244,10 +245,10 @@ For a real multi-user deployment, replace the JSON file with a database-backed u
 ### Storage And Scaling Notes
 
 - Login sessions are stored in server memory. Restarting the server signs users out.
-- Saved cohorts and audit logs are currently stored in each browser with `localStorage`.
-- Browser-local audit logs do not provide central monitoring across all users or devices.
-- For production audit, move sessions, saved cohorts, and run logs to a database.
-- If running multiple server instances, use shared session storage and a shared user database.
+- Saved cohorts and audit logs use the active `appStorage` backend.
+- In local mode, saved cohorts and logs are written to server-local JSON files under `data/`.
+- In SQL mode, saved cohorts and logs are written to the shared SQL Server application tables.
+- For multi-instance deployment, use shared session storage and shared SQL-backed app storage.
 
 ## Stop Dev Server
 
@@ -267,33 +268,53 @@ Use `kill -9 <PID>` only if the process does not stop normally.
 
 ## Current Scope
 
-- Domains: diagnosis, lab, and drug release/prescription.
-- Cohort logic: multiple T0 index event conditions, AND/OR condition logic, demographics, inclusion criteria, exclusion criteria, comorbidity diagnosis filters, lab thresholds, drug timing before/after T0, and multiple code/name concept selection.
-- Concept picker: diagnosis, lab, and drug controls use searchable dropdown lists generated from the synthetic dataset; users can search, select visible matches, clear visible matches, clear all, and confirm with an Apply button.
+- Domains: diagnosis, lab, and drug release or prescription.
+- Cohort logic: reusable Airtable-style nested filter groups for T0 index event conditions, inclusion criteria, and exclusion criteria.
+- Filter groups: nested AND/OR groups, add and delete condition rows, add and delete groups, typed operators by field type, and validation against the allowed field whitelist.
+- Timing logic: inclusion and exclusion timing is expressed with `Days from T0`, so negative values mean before T0 and positive values mean after T0.
 - Startup state: the app opens with no selected concepts; use the preset buttons to load example cohort definitions.
-- Saved cohorts: users can save the current cohort selection with a name, search saved definitions by name/question/code/concept, reload them later, and delete old saved definitions. Saved cohorts are stored in the browser with `localStorage`.
+- Master dictionary: `/dictionary.html` provides a separate read-only diagnosis/lab/drug lookup page for searching code, name, group, and count before entering conditions.
+- Dictionary data: the UI reads `public/data/master-dictionary.json`, which is a checked-in local snapshot generated from the ICD-10, ICD-9, lab, and drug Google Sheets.
+- Dictionary refresh: run `pnpm sync-dictionary` to rebuild the local snapshot from the upstream Google Sheets.
+- Saved cohorts: users can save the current cohort selection with a name, search saved definitions by name or content, reload them later, and delete old saved definitions through the active backend storage mode.
 - SQL builder: the right panel generates CTE-based MSSQL from the selected cohort criteria and includes a Copy SQL button.
 - Results panel: shows T0 index and final cohort counts, horizontal attrition bars, and a clickable SVG cohort workflow diagram.
 - Workflow export: the cohort workflow diagram can be downloaded as SVG or 2x PNG.
-- Session logs: `/logs.html` shows browser-local session counts and feasibility run audit records.
+- Session logs: `/logs.html` reads session counts and feasibility run audit records from the active backend storage mode.
 - Data: synthetic only. Local development reads `public/data/synthetic-clinical-data.json` first, but that file is ignored by Git. The committed example dataset is `public/data/synthetic-clinical-data_example.json`.
 
 ## Saved Cohort Selections
 
-Use **Save current** to store the current research question, T0 conditions, demographics, inclusion rules, exclusion rules, selected concepts, timing windows, and lab value filters.
+Use **Save current** to store the current research question, T0 conditions, demographics, inclusion rules, exclusion rules, nested group logic, timing windows, and lab value filters.
 
-Saved definitions are kept in the current browser only. They are not sent to a server and are not shared across devices unless browser storage is copied or exported separately.
+Saved definitions are handled through backend APIs. In local mode they are written to `data/saved-cohorts.json` on this server; in SQL mode they are written to the configured SQL Server application tables.
 
 ## Session And Run Logs
 
 Open `http://localhost:4173/logs.html` to view prototype audit logs.
 
-- Each browser session receives a generated session ID.
+- Each signed-in session receives a generated session record.
 - Each manual **Run feasibility count** action creates a run log.
-- Run logs include the research question, T0 count, final cohort count, attrition, generated SQL, full cohort config, and selected diagnosis/lab/drug concepts.
+- Run logs include the research question, T0 count, final cohort count, attrition, generated SQL, full cohort config, and the selected filter-tree conditions.
 - Logs can be searched and exported as JSON.
 
-This is local browser monitoring only. It can show how the current browser uses the app, but it cannot count all users across machines until a shared backend or database audit service is added.
+This page reads the active backend storage mode. Local mode stays on this server; SQL mode uses the shared SQL database.
+
+## Master Dictionary
+
+Open `http://localhost:4173/dictionary.html` to search the diagnosis, lab, and drug master dictionary before building conditions.
+
+- Search supports code, name, group, and count.
+- Domain tabs let users focus on diagnosis, lab, or drug entries.
+- Each result exposes copy actions for code and name.
+- The page reads the local snapshot in `public/data/master-dictionary.json`.
+- Source links for the ICD-10, ICD-9, lab, and drug sheets are shown in the UI.
+
+Refresh the snapshot with:
+
+```bash
+pnpm sync-dictionary
+```
 
 ## Synthetic Data Files
 

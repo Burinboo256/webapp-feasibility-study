@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Master Dictionary - Cohort Lens</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <header class="hero compact-hero">
+      <nav class="topbar" aria-label="Application">
+        <a class="brand" href="/">Cohort Lens</a>
+        <div class="nav-actions">
+          <a class="nav-link" href="/">Cohort builder</a>
+          <a class="nav-link" href="/logs.html">Session logs</a>
+          <div id="authStatus" class="auth-status"></div>
+          <span class="pill">Master dictionary</span>
+        </div>
+      </nav>
+      <section class="hero-grid">
+        <div>
+          <p class="eyebrow">Reference lookup</p>
+          <h1>Search diagnosis, lab, and drug codes before building conditions.</h1>
+          <p class="hero-copy">
+            Use this page to review available synthetic dictionary entries, search by code or name, and copy the exact
+            values you want to use in T0, inclusion, or exclusion conditions.
+          </p>
+        </div>
+      </section>
+    </header>
+
+    <main class="log-layout">
+      <section class="panel" aria-labelledby="dictionaryTitle">
+        <div class="section-heading sql-heading">
+          <div>
+            <p class="eyebrow">Search</p>
+            <h2 id="dictionaryTitle">Clinical master dictionary</h2>
+          </div>
+          <div class="dictionary-stats">
+            <span id="dictionaryCount" class="pill">0 entries</span>
+          </div>
+        </div>
+        <div class="dictionary-controls">
+          <div id="domainTabs" class="dictionary-tabs" role="tablist" aria-label="Dictionary domains"></div>
+          <label class="field wide">
+            <span>Search code, name, group, or count</span>
+            <input id="dictionarySearch" type="search" placeholder="Search E11, HbA1c, metformin, chemistry">
+          </label>
+        </div>
+        <p id="dictionaryHint" class="helper-text">Search results come from the local checked-in dictionary snapshot.</p>
+        <div id="dictionaryWarning" class="helper-text" hidden></div>
+        <div id="dictionarySources" class="dictionary-source-list"></div>
+      </section>
+
+      <section class="panel" aria-labelledby="dictionaryResultsTitle">
+        <div class="section-heading">
+          <p class="eyebrow">Results</p>
+          <h2 id="dictionaryResultsTitle">Dictionary entries</h2>
+        </div>
+        <div id="dictionaryResults" class="dictionary-results"></div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      Dictionary entries reflect the synthetic development dataset only.
+    </footer>
+
+    <script type="module" src="/dictionary.js"></script>
+  </body>
+</html>

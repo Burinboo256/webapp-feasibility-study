@@ -4,6 +4,8 @@ Project Overview
 
 This project is a Node.js web application for cohort feasibility research. It supports diagnosis, laboratory, and medication criteria, generates SQL Server style feasibility SQL, and can run in either local demo mode or SQL Server backed mode.
 
+The current builder uses a reusable Airtable style advanced filter UI for T0 index event conditions, inclusion criteria, and exclusion criteria. Users can create nested AND or OR groups, add or remove condition rows, and build reusable field or operator based logic without inline concept preview widgets.
+
 Repository
 
 https://github.com/Burinboo256/webapp-feasibility-study
@@ -13,22 +15,62 @@ Primary Commands
 - pnpm install
 - pnpm dev
 - pnpm test
+- pnpm sync-dictionary
 - node scripts/hash-password.mjs "new-password"
 
 What The App Does
 
-- Builds cohort definitions with T0 index events, demographics, inclusion rules, exclusion rules, timing windows, and selected diagnosis, lab, and drug concepts.
+- Builds cohort definitions with T0 index events, demographics, inclusion rules, exclusion rules, nested condition groups, timing windows, and typed field operators.
 - Runs feasibility counts through the Node backend instead of directly in the browser.
 - Generates SQL Server style CTE-based SQL for review and debugging.
 - Supports login, OTP flows, saved cohorts, and audit logging.
+- Provides a separate master dictionary page for diagnosis, lab, and drug code review before adding conditions.
 
-Main Configuration File
+Configuration And Credential Safety
 
-The main runtime configuration is:
+The repository now keeps only checked-in example templates for configuration and local app storage.
 
-config/app.config.json
+Checked-in example files:
 
-This one file controls:
+- config/app.config.example.json
+- data/users.example.json
+- data/user-sessions.example.json
+- data/pending-otps.example.json
+- data/saved-cohorts.example.json
+- data/feasibility-run-logs.example.json
+- data/audit-session-logs.example.json
+
+Local runtime files are created from those examples and are Git-ignored:
+
+- config/app.config.json
+- data/users.json
+- data/user-sessions.json
+- data/pending-otps.json
+- data/saved-cohorts.json
+- data/feasibility-run-logs.json
+- data/audit-session-logs.json
+
+This prevents SMTP settings, OAuth settings, SQL Server credentials, OTP records, session data, and local audit data from being committed again by default.
+
+First-Time Local Setup
+
+1. Install Node.js 20 or newer.
+2. Install dependencies with pnpm install.
+3. Copy the example files to local runtime files.
+4. If needed, copy public/data/synthetic-clinical-data_example.json to public/data/synthetic-clinical-data.json.
+5. Start the app with pnpm dev.
+
+The application can boot from the example config and example users data when local files are absent, but real local work should still use the copied local files above.
+
+Main Config Template
+
+The checked-in config template is:
+
+config/app.config.example.json
+
+Create your local config/app.config.json from that file before editing any environment-specific values.
+
+This configuration controls:
 
 - server host, port, and cookie security
 - OTP and session settings
@@ -40,7 +82,7 @@ This one file controls:
 
 Important Config Switches
 
-The application now uses two independent switches:
+The application uses two independent switches:
 
 - clinicalDataSource: "json" or "sqlserver"
 - appStorage: "local" or "sqlserver"
@@ -57,98 +99,57 @@ Recommended combinations:
 
 Meaning Of Each Switch
 
-- clinicalDataSource controls where feasibility counts and concept lookup data come from.
+- clinicalDataSource controls where feasibility counts and cohort execution data come from.
 - appStorage controls where users, sessions, pending OTPs, saved cohorts, feasibility run logs, and audit session logs are stored.
-
-Environment Variable Overrides
-
-The config file is the source of truth, but these environment variables can override it when needed:
-
-- HOST
-- PORT
-- COOKIE_SECURE
-- CLINICAL_DATA_SOURCE
-- APP_STORAGE
-- DATA_SOURCE
-- GOOGLE_CLIENT_ID
-- GOOGLE_CLIENT_SECRET
-- GOOGLE_REDIRECT_URI
-- GOOGLE_ALLOWED_EMAILS
-- SMTP_HOST
-- SMTP_PORT
-- SMTP_SECURE
-- SMTP_USER
-- SMTP_PASS
-- SMTP_FROM
-- SQLSERVER_HOST
-- SQLSERVER_PORT
-- SQLSERVER_DATABASE
-- SQLSERVER_USER
-- SQLSERVER_PASSWORD
-- SQLSERVER_ENCRYPT
-- SQLSERVER_TRUST_SERVER_CERTIFICATE
-
-Local Storage Mode
-
-When appStorage is set to "local", the backend stores data in local JSON files under the data directory:
-
-- data/users.json
-- data/user-sessions.json
-- data/pending-otps.json
-- data/saved-cohorts.json
-- data/feasibility-run-logs.json
-- data/audit-session-logs.json
-
-This mode is suitable for local demo and single-machine testing. It is not intended for multi-instance production deployment.
-
-SQL Server Storage Mode
-
-When appStorage is set to "sqlserver", the backend stores app data in SQL Server tables instead of local JSON files.
-
-The initial setup script is:
-
-tests/sql-initial-setup.sql
-
-Core clinical tables created by that script:
-
-- Patient_Info
-- Diagnosis
-- Laboratory
-- Medication
-
-Application tables created by that script:
-
-- App_Users
-- User_Sessions
-- Pending_Otp
-- Saved_Cohorts
-- Audit_Session_Log
-- Feasibility_Run_Logs
-- Auth_Event_Log
-
-Initial SQL Server Setup
-
-To prepare a new SQL Server database:
-
-1. Create or choose a SQL Server database.
-2. Run tests/sql-initial-setup.sql.
-3. Update config/app.config.json with SQL Server connection settings.
-4. Set clinicalDataSource and appStorage to "sqlserver" if you want both feasibility data and app persistence in SQL Server.
-5. Install dependencies with pnpm install so the mssql driver is available.
 
 Authentication And Audit
 
-- The app requires login before using the cohort builder and logs page.
+- The app requires login before using the cohort builder, dictionary page, and logs page.
 - Credentials login and Google OAuth are both supported.
 - OTP flows are used for sign-up confirmation and password reset.
-- Feasibility run logs include user identity, question, counts, attrition, selected concepts, full cohort config, and generated SQL.
+- If SMTP host is blank, OTPs are written to the server console for development.
+- If SMTP delivery fails in local mode, the app falls back to the server console with a warning.
+- Feasibility run logs include user identity, question, counts, attrition, full cohort config, and generated SQL.
 - Audit session logs track session activity, page views, and run counts.
+
+Current Scope
+
+- Diagnosis, lab, and medication feasibility criteria
+- Airtable style advanced filter builder with nested condition groups
+- Reusable T0, inclusion, and exclusion rule editors
+- AND and OR logic in every group
+- Field type aware operators with validation against the allowed whitelist
+- Separate master dictionary page at /dictionary.html
+- Saved cohorts through backend APIs
+- Audit and run logs
+- SQL preview for cohort logic
+
+Master Dictionary
+
+The master dictionary page is used for search and review before adding conditions.
+
+- Search by code, name, group, or count
+- Filter by diagnosis, lab, or drug domain
+- Copy code or name from a result card
+- Read from the local snapshot file public/data/master-dictionary.json
+
+The local snapshot is generated from these Google Sheet sources:
+
+- ICD-10
+- ICD-9
+- Lab
+- Drug
+
+Refresh the snapshot with:
+
+pnpm sync-dictionary
 
 Saved Cohorts
 
 - Users can save the current cohort definition, list saved cohorts, reload them, and delete them.
-- Saved cohorts are now handled through backend APIs.
-- The storage location depends on appStorage, not browser localStorage.
+- Saved cohorts are handled through backend APIs.
+- In local mode they are stored in data/saved-cohorts.json on the server.
+- In SQL mode they are stored in SQL Server application tables.
 
 Generated SQL
 
@@ -160,7 +161,7 @@ The SQL builder produces SQL Server style feasibility SQL with these assumptions
 - laboratory table: Laboratory
 - medication table: Medication
 - style: CTEs plus EXISTS and NOT EXISTS
-- date functions: DATEDIFF, DATEADD, GETDATE, BETWEEN
+- date functions: DATEDIFF, DATEADD, and BETWEEN
 
 The generated SQL is a feasibility draft and should be reviewed against the real source schema before production use.
 
@@ -168,16 +169,6 @@ Cloud And Production Notes
 
 - This app must run with the Node server in scripts/dev-server.mjs.
 - Do not deploy it as static files only if login, OTP, audit, or saved cohorts are required.
-- For real deployment, replace demo credentials, configure SMTP, and configure Google OAuth correctly.
+- For real deployment, create local config from the example, then set SMTP, Google OAuth, and SQL Server values outside Git-tracked files.
+- Replace demo credentials before real use.
 - Shared SQL-backed storage is the correct direction for multi-user environments.
-
-Current Scope
-
-- diagnosis, lab, and medication feasibility criteria
-- multiple T0 conditions with AND and OR logic
-- demographics, inclusion, exclusion, comorbidity, and timing rules
-- searchable concept pickers
-- saved cohorts
-- audit and run logs
-- SQL preview for cohort logic
-
